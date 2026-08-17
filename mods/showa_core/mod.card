@@ -1,0 +1,23 @@
+return {
+  summary = "Shared library for the Showa Johto suite: wallet, clock "
+    .. "mirror, scheduler, world news feed, venue graph, and the arcade "
+    .. "minigame scaffold. Ships no gameplay of its own.",
+  author = "amoore2829",
+  tags = { "library", "gen2", "showa" },
+  differences = {
+    changed = {},
+    added = {
+      "a NEWS row on Gold's START menu opening the town news feed",
+    },
+    known = {
+      "a library mod: without a dependent Showa mod installed, the news "
+        .. "feed stays empty",
+      "clock mirror reads only what the mod API reports; day/tod are "
+        .. "unknown until the first clock event or tod computation fires",
+      "engine_internals permission is used only to draw minigame text "
+        .. "through the engine Font",
+    },
+  },
+  credits = {},
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}

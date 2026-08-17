@@ -1,0 +1,17 @@
+{
+  "id": "showa_core",
+  "name": "Showa Core",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "TOOL",
+  "games": ["gen2"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 50,
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "permissions": ["engine_internals"],
+  "description": "Shared library for the Showa Johto suite: multi-currency wallet, Gen 2 clock mirror, venue scheduler, world news feed, venue graph, and the arcade minigame screen base. Ships no gameplay of its own."
+}
