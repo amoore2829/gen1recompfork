@@ -1,0 +1,15 @@
+{
+  "id": "gen2_api_probe",
+  "name": "Gen 2 API Probe",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "TOOL",
+  "games": ["gen2"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "dependencies": [],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "description": "Dev diagnostic: audits which mod-API seams (events, hooks, registries, world API) are live on a Gold boot. Re-run after every upstream sync."
+}
