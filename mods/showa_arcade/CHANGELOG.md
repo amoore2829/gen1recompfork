@@ -3,6 +3,22 @@
 All notable changes to this mod are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-08-17
+
+### Added
+
+- **DITTO DITTO REVOLUTION**, the arcade's second cabinet: a four-lane
+  rhythm game whose chart is generated from a seed, so a machine plays
+  the same song twice. PERFECT/GOOD windows, a combo bonus every tenth
+  step, and Ditto-pink arrows falling to a target row that lights when
+  an arrow is claimable. Costs one token, posts to its own high-score
+  board.
+
+### Changed
+
+- Verb dialogue now goes through `core.dialogue.say`: `Vm:showText`
+  takes a text key and printed "..." for a sentence.
+
 ## [0.1.0] - 2026-08-17
 
 ### Added

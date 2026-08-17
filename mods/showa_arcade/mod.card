@@ -11,6 +11,8 @@ return {
         .. "(sells 10 GAME TOKENS for $500), the EKANS cabinet (1 token), "
         .. "and the gatcha machine (3 tokens)",
       "the EKANS minigame: seeded snake on a 18x12 LCD-green playfield",
+      "DITTO DITTO REVOLUTION: a four-lane rhythm cabinet with a seeded "
+        .. "chart, PERFECT/GOOD windows and a combo bonus",
       "the gatcha: weighted prize drum with COMMON/UNCOMMON/RARE tiers "
         .. "and duplicate protection on the two trophies",
       "arcade records post to the Showa town news feed",

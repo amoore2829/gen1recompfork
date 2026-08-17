@@ -13,7 +13,7 @@ the gotchas each cost a debugging cycle once).
 | Feature | Kind | Version | Status | Lives in |
 |---|---|---|---|---|
 | [Showa Core](#showa-core) | Mod | 0.1.0 | Shipped | [mods/showa_core/](mods/showa_core/) |
-| [Showa Arcade](#showa-arcade) | Mod | 0.1.0 | Shipped | [mods/showa_arcade/](mods/showa_arcade/) |
+| [Showa Arcade](#showa-arcade) | Mod | 0.2.0 | Shipped | [mods/showa_arcade/](mods/showa_arcade/) |
 | [Showa Contests](#showa-contests) | Mod | 0.1.0 | Shipped | [mods/showa_contests/](mods/showa_contests/) |
 | [Showa Malls](#showa-malls) | Mod | 0.1.0 | Shipped | [mods/showa_malls/](mods/showa_malls/) |
 | [Showa Rivals](#showa-rivals) | Mod | 0.1.0 | Shipped | [mods/showa_rivals/](mods/showa_rivals/) |
@@ -55,12 +55,14 @@ Suites: 40 pure lib checks, 13 headless.
 
 The Goldenrod Game Corner as a Showa-era arcade. A clerk sells 10 GAME TOKENS
 for $500, the EKANS cabinet takes one, and the gatcha machine takes three.
-EKANS is a seeded snake — same seed, same game, move for move — and the gatcha
-rolls a weighted three-tier pool with duplicate protection on its two
+EKANS is a seeded snake — same seed, same game, move for move.
+**DITTO DITTO REVOLUTION** is the second cabinet: four lanes, a chart generated
+from a seed, PERFECT/GOOD windows and a combo bonus every tenth step. The
+gatcha rolls a weighted three-tier pool with duplicate protection on its two
 trophies. Records and rare pulls reach the news feed, and
 `highScore` / `submitScore` are the seam the rivals post through.
 
-Suites: 2017 pure rules checks, 12 headless, 18-check Gold driver.
+Suites: 3732 pure rules checks, 12 headless, 18-check Gold driver plus a DDR driver.
 
 ### Showa Contests
 
