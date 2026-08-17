@@ -1,0 +1,36 @@
+return {
+  summary = "Rivals who live their own lives: they travel Johto, train, "
+    .. "catch, and turn up where their interests take them. Ships kid "
+    .. "Professor Elm, an arcade rat who really does beat your high "
+    .. "scores, and a fishing prodigy who enters the derby against you.",
+  author = "amoore2829",
+  tags = { "rivals", "simulation", "gen2", "showa" },
+  differences = {
+    changed = {},
+    added = {
+      "three rivals with their own saved lives -- team, money, bag, and "
+        .. "where they are right now -- who move between venues, train "
+        .. "toward your level, and catch Pokemon of their own",
+      "a RIVALS row on the START menu showing who is where",
+      "three trainer classes whose battle party is the rival's LIVE "
+        .. "team, substituted through the trainer.party hook",
+      "the arcade rat posts real EKANS scores, and the fishing prodigy "
+        .. "enters Seaking Derby sittings as a competitor",
+    },
+    known = {
+      "rivals travel the venue GRAPH, not map tiles: they appear when "
+        .. "you enter a venue they are at, rather than being walked past "
+        .. "on a route",
+      "the world turns when you LEAVE a map, so a rival can move on "
+        .. "between your visits -- that is deliberate",
+      "no rival-vs-rival battles or gym challenges yet",
+      "three of a planned cast of twenty",
+    },
+  },
+  credits = {
+    "MrKrisSatan's AIRivals for the idea of rivals with lives of their "
+      .. "own. Clean-room: that mod ships without a license and only as "
+      .. "zips, so none of it was read, unpacked or copied.",
+  },
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}
