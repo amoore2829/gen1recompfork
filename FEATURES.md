@@ -16,7 +16,7 @@ the gotchas each cost a debugging cycle once).
 | [Showa Arcade](#showa-arcade) | Mod | 0.2.0 | Shipped | [mods/showa_arcade/](mods/showa_arcade/) |
 | [Showa Contests](#showa-contests) | Mod | 0.1.0 | Shipped | [mods/showa_contests/](mods/showa_contests/) |
 | [Showa Malls](#showa-malls) | Mod | 0.1.0 | Shipped | [mods/showa_malls/](mods/showa_malls/) |
-| [Showa Rivals](#showa-rivals) | Mod | 0.1.0 | Shipped | [mods/showa_rivals/](mods/showa_rivals/) |
+| [Showa Rivals](#showa-rivals) | Mod | 0.2.0 | Shipped | [mods/showa_rivals/](mods/showa_rivals/) |
 | [Gen 2 API Probe](#gen-2-api-probe) | Mod (dev tool) | 0.1.0 | Shipped | [mods/gen2_api_probe/](mods/gen2_api_probe/) |
 | ROM files gitignored | Repo hygiene | — | Shipped | [.gitignore](.gitignore) |
 
@@ -95,20 +95,22 @@ Suites: 69 pure rules checks, 10 headless, 16-check Gold driver.
 Rivals with lives of their own: they travel the venue graph, train toward the
 player's level, shop, and catch from their own species pools, and the team you
 fight is the team they have actually been building (substituted live through
-the `trainer.party` hook). Three of a planned cast of twenty ship — ELM,
-SPARKS the arcade rat who really does take over the EKANS board, and NAGISA
-the fishing prodigy who enters the derby against you.
+the `trainer.party` hook). All twenty ship, each a single data file: the
+occult nerd, the idol, the fashionista, the tinkerer, the festival cook, the
+shy kid, the gardener, the shrine apprentice, the prankster, the street
+performer, the Center helper, the mall foodie, the shonen protagonist, the
+surfer, and the Tyrogue triplets who each took a different evolution.
 
 The brain is pure and seeded, so a rival's whole life replays from its seed
-and the suite can soak a thousand ticks per rival. The world turns when the
-player *leaves* a map rather than enters one, so a rival is where the news
-said it was. Adding rivals 4 through 20 is one data file each.
+and the suite soaks the entire cast. The world turns when the player *leaves*
+a map rather than enters one, so a rival is where the news said it was. Where
+a rival's baby Pokemon postdates Gold, they carry its Gen 2 relative.
 
 Clean-room work: MrKrisSatan's AIRivals is the inspiration for the idea and
 nothing else — it ships without a license and only as zips, so none of it was
 read, unpacked or copied.
 
-Suites: 29,778 pure sim checks, 27 headless (including a load with none of the
+Suites: 38,509 pure sim checks, 82 headless (including a load with none of the
 optional dependencies present), 21-check Gold driver.
 
 ### Gen 2 API Probe

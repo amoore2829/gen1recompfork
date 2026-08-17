@@ -12,10 +12,38 @@
 -- leaves tile pathing as a later swap of the travel step alone.
 local Advance = require("mods.showa_rivals.sim.advance")
 
+local Venues = require("mods.showa_rivals.world.venues")
+
+-- The cast, one data file each -- which is the framework paying off: a
+-- new rival is a character sheet, never a code change.
+--
+-- Where a rival's baby Pokemon is a later generation than Gold, they
+-- carry its Gen 2 relative instead (Azurill -> MARILL, Bonsly ->
+-- SUDOWOODO, Mime Jr. -> MR__MIME, Happiny -> CHANSEY, Munchlax ->
+-- SNORLAX, Mantyke -> MANTINE, Wynaut -> WOBBUFFET, Riolu -> MACHOP,
+-- Budew -> BELLSPROUT, Chingling -> NATU).  Named honestly in mod.card
+-- rather than pretending Gold has species it does not.
 local ROSTER = {
   require("mods.showa_rivals.rivals.elm"),
   require("mods.showa_rivals.rivals.pichu"),
   require("mods.showa_rivals.rivals.azurill"),
+  require("mods.showa_rivals.rivals.cleffa"),
+  require("mods.showa_rivals.rivals.igglybuff"),
+  require("mods.showa_rivals.rivals.smoochum"),
+  require("mods.showa_rivals.rivals.elekid"),
+  require("mods.showa_rivals.rivals.magby"),
+  require("mods.showa_rivals.rivals.wynaut"),
+  require("mods.showa_rivals.rivals.budew"),
+  require("mods.showa_rivals.rivals.chingling"),
+  require("mods.showa_rivals.rivals.bonsly"),
+  require("mods.showa_rivals.rivals.mimejr"),
+  require("mods.showa_rivals.rivals.happiny"),
+  require("mods.showa_rivals.rivals.munchlax"),
+  require("mods.showa_rivals.rivals.riolu"),
+  require("mods.showa_rivals.rivals.mantyke"),
+  require("mods.showa_rivals.rivals.tyrogue_lee"),
+  require("mods.showa_rivals.rivals.tyrogue_chan"),
+  require("mods.showa_rivals.rivals.tyrogue_top"),
 }
 
 -- One tick per this many steps: coarse on purpose.  core.update would be
@@ -43,6 +71,11 @@ return function(mod)
   core.venues.register("ALPH_RUINS", {
     map = "RUINS_OF_ALPH_OUTSIDE", label = "RUINS OF ALPH",
     tags = { "story", "mystery" }, x = 11, y = 17 })
+  for _, spot in ipairs(Venues.LIST) do
+    core.venues.register(spot.id, {
+      map = spot.map, label = spot.label, tags = spot.tags,
+      x = spot.x, y = spot.y })
+  end
 
   -- Connect everything that exists.  A venue a feature mod did not
   -- register simply is not there, and the graph stays whole around it --
@@ -52,14 +85,10 @@ return function(mod)
       core.venues.connect(a, b, cost)
     end
   end
-  link("ELM_LAB", "ALPH_RUINS", 2)
-  link("ALPH_RUINS", "GOLDENROD_ARCADE", 2)
-  link("GOLDENROD_ARCADE", "SHOWA_MALL", 1)
+  for _, edge in ipairs(Venues.EDGES) do link(edge[1], edge[2], edge[3]) end
   link("GOLDENROD_ARCADE", "CHIKAGAI", 1)
   link("CHIKAGAI", "SHOWA_MALL", 1)
-  link("SHOWA_MALL", "LAKE_DERBY", 3)
-  link("GOLDENROD_ARCADE", "LAKE_DERBY", 3)
-  link("ELM_LAB", "LAKE_DERBY", 4)
+  link("ELM_LAB", "ALPH_RUINS", 2)
 
   -- ------- persistent rival state
 

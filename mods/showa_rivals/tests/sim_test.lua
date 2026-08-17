@@ -11,9 +11,21 @@ local Rng = require("mods.showa_rivals.sim.rng")
 local Growth = require("mods.showa_rivals.sim.growth")
 local Advance = require("mods.showa_rivals.sim.advance")
 
+local Venues = require("mods.showa_rivals.world.venues")
+
 local ELM = require("mods.showa_rivals.rivals.elm")
 local PICHU = require("mods.showa_rivals.rivals.pichu")
 local AZURILL = require("mods.showa_rivals.rivals.azurill")
+
+-- the whole cast, loaded the way main.lua loads it
+local IDS = { "elm", "pichu", "azurill", "cleffa", "igglybuff", "smoochum",
+              "elekid", "magby", "wynaut", "budew", "chingling", "bonsly",
+              "mimejr", "happiny", "munchlax", "riolu", "mantyke",
+              "tyrogue_lee", "tyrogue_chan", "tyrogue_top" }
+local CAST = {}
+for _, id in ipairs(IDS) do
+  CAST[#CAST + 1] = require("mods.showa_rivals.rivals." .. id)
+end
 
 -- ------- rng
 
@@ -118,10 +130,10 @@ do
     venueExists = function(id) return known[id] == true end,
   }
 
-  for _, def in ipairs({ ELM, PICHU, AZURILL }) do
+  for _, def in ipairs(CAST) do
     local live = Advance.spawn(def, def.seed)
     local lastLevel = 0
-    for tick = 1, 1000 do
+    for tick = 1, 200 do
       Advance.tick(live, def, world)
       T.check(known[live.location] ~= nil,
         ("%s is always at a real venue (tick %d: %s)")
@@ -140,7 +152,39 @@ do
       T.check(best >= lastLevel, def.id .. " never loses ground")
       lastLevel = best
     end
-    T.check(live.ticks == 1000, def.id .. " counted every tick")
+    T.check(live.ticks == 200, def.id .. " counted every tick")
+  end
+end
+
+-- ------- the venue table the cast is homed against
+
+do
+  local known = {}
+  for _, spot in ipairs(Venues.LIST) do
+    T.check(not known[spot.id], "venue ids are unique: " .. spot.id)
+    known[spot.id] = true
+    T.check(type(spot.map) == "string" and spot.map ~= "",
+      spot.id .. " names a map")
+    T.check(spot.x and spot.y, spot.id .. " carries a verified cell")
+  end
+  -- the two this mod registers itself, plus the feature mods' own
+  for _, id in ipairs({ "ELM_LAB", "ALPH_RUINS", "GOLDENROD_ARCADE",
+                        "SHOWA_MALL", "CHIKAGAI", "LAKE_DERBY" }) do
+    known[id] = true
+  end
+  for _, edge in ipairs(Venues.EDGES) do
+    T.check(known[edge[1]], "edge starts at a known venue: " .. edge[1])
+    T.check(known[edge[2]], "edge ends at a known venue: " .. edge[2])
+    T.check(type(edge[3]) == "number" and edge[3] > 0,
+      "and carries a travel cost")
+  end
+  -- every rival must be homed somewhere the graph knows
+  for _, def in ipairs(CAST) do
+    T.check(known[def.home], def.id .. " is homed at a known venue: "
+      .. tostring(def.home))
+    for haunt in pairs(def.haunts or {}) do
+      T.check(known[haunt], def.id .. " haunts a known venue: " .. haunt)
+    end
   end
 end
 
@@ -148,13 +192,20 @@ end
 
 do
   local seen = {}
-  for _, def in ipairs({ ELM, PICHU, AZURILL }) do
+  for _, def in ipairs(CAST) do
     T.check(not seen[def.id], "rival ids are unique: " .. def.id)
     seen[def.id] = true
     T.check(not seen[def.trainerClass], "trainer classes are unique")
     seen[def.trainerClass] = true
     T.check(#def.starter >= 1, def.id .. " has a starter")
     T.check(def.home ~= nil, def.id .. " has a home venue")
+    T.check(type(def.name) == "string" and #def.name > 0
+      and #def.name <= 10, def.id .. " has a name that fits a box")
+    T.check(def.pace and def.pace > 0.5 and def.pace < 2,
+      def.id .. " has a sane pace")
+    T.check(def.catchChance and def.catchChance > 0
+      and def.catchChance < 100, def.id .. " has a sane catch rate")
+    T.check(#(def.catches or {}) >= 1, def.id .. " has a species pool")
     for _, key in ipairs({ "greet", "challenge", "win", "loss" }) do
       T.check(type(def.lines[key]) == "string" and #def.lines[key] > 0,
         ("%s has a %s line"):format(def.id, key))

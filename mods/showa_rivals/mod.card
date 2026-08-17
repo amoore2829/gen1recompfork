@@ -1,14 +1,14 @@
 return {
   summary = "Rivals who live their own lives: they travel Johto, train, "
-    .. "catch, and turn up where their interests take them. Ships kid "
-    .. "Professor Elm, an arcade rat who really does beat your high "
-    .. "scores, and a fishing prodigy who enters the derby against you.",
+    .. "catch, and turn up where their interests take them. All twenty "
+    .. "of the cast ship: the arcade rat really does beat your high "
+    .. "scores, and the fishing prodigy enters the derby against you.",
   author = "amoore2829",
   tags = { "rivals", "simulation", "gen2", "showa" },
   differences = {
     changed = {},
     added = {
-      "three rivals with their own saved lives -- team, money, bag, and "
+      "twenty rivals with their own saved lives -- team, money, bag, and "
         .. "where they are right now -- who move between venues, train "
         .. "toward your level, and catch Pokemon of their own",
       "a RIVALS row on the START menu showing who is where",
@@ -24,7 +24,9 @@ return {
       "the world turns when you LEAVE a map, so a rival can move on "
         .. "between your visits -- that is deliberate",
       "no rival-vs-rival battles or gym challenges yet",
-      "three of a planned cast of twenty",
+      "where a rival's baby Pokemon is a later generation than Gold, "
+        .. "they carry its Gen 2 relative instead (Bonsly -> SUDOWOODO, "
+        .. "Munchlax -> SNORLAX, Riolu -> MACHOP, and so on)",
     },
   },
   credits = {

@@ -84,7 +84,7 @@ rows rather than rewriting history.**
 
 ## Later phases (backlog, not scheduled)
 
-- [ ] Remaining ~17 rivals (one data file each): Cleffa, Igglybuff, Tyrogue ×3, Smoochum, Elekid, Magby, Wynaut, Budew*, Chingling*, Bonsly*, Mime Jr.*, Happiny*, Munchlax*, Riolu*, Mantyke* (* = Gen 4 species need `pokemon` registry additions or stand-ins)
+- [x] The full cast of twenty rivals — one data file each, all homed on verified venue cells — 2026-08-17
 - [ ] Tournaments
 - [ ] Animal-Jam-style parties (battles, rare trades, "looking for item X" exchanges)
 - [ ] Safari zone

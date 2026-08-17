@@ -11,7 +11,15 @@ local T = require("tests.modkit")
 -- lead with Gen 2 ones a real Gold cache has and it does not.  Seeding
 -- them is the same move tests/engine/gen2_content_registries.lua makes
 -- for the items its registries reference.
-local STARTERS = { "TOGEPI", "PIKACHU", "MARILL" }
+local STARTERS = { "TOGEPI", "PIKACHU", "MARILL", "CLEFFA", "IGGLYBUFF",
+  "SMOOCHUM", "ELEKID", "MAGBY", "WOBBUFFET", "BELLSPROUT", "NATU",
+  "SUDOWOODO", "MR__MIME", "CHANSEY", "SNORLAX", "MACHOP", "MANTINE",
+  "TYROGUE", "MISDREAVUS", "UNOWN", "HOOTHOOT", "JIGGLYPUFF", "CLEFAIRY",
+  "DELIBIRD", "MAGNEMITE", "VOLTORB", "ELECTABUZZ", "PORYGON", "SLUGMA",
+  "GROWLITHE", "HOUNDOUR", "MAGMAR", "SUNKERN", "HOPPIP", "ODDISH",
+  "BAYLEEF", "AIPOM", "XATU", "MILTANK", "TEDDIURSA", "SWINUB", "MACHOKE",
+  "HERACROSS", "REMORAID", "QWILFISH", "POLIWAG", "SEAKING", "GOLDEEN",
+  "MAGIKARP", "NATU", "HITMONLEE", "HITMONCHAN", "HITMONTOP", "VOLTORB" }
 
 local function goldData()
   local data = T.fixtures.fresh()
@@ -50,7 +58,7 @@ do
   local arcade = run.loader.exports.showa_arcade
 
   local roster = rivals.roster()
-  T.eq(#roster, 3, "three rivals ship in v1")
+  T.eq(#roster, 20, "the whole cast ships (" .. #roster .. ")")
   for _, entry in ipairs(roster) do
     T.check(core.venues.get(entry.location) ~= nil,
       entry.name .. " starts at a registered venue")
@@ -58,8 +66,12 @@ do
   end
 
   -- the trainer classes really landed in the Gen 2 table
+  local classes = 0
+  for _ in pairs(run.data.gen2Trainers.classes) do classes = classes + 1 end
+  T.eq(classes, 20, "one trainer class per rival (" .. classes .. ")")
   for _, class in ipairs({ "SHOWA_ELM", "SHOWA_PICHU_KID",
-                           "SHOWA_AZURILL_KID" }) do
+                           "SHOWA_AZURILL_KID", "SHOWA_CLEFFA_KID",
+                           "SHOWA_TYROGUE_TOP", "SHOWA_MUNCHLAX_KID" }) do
     T.check(run.data.gen2Trainers.classes[class] ~= nil,
       "trainer class registered: " .. class)
   end
@@ -78,7 +90,7 @@ do
     "at() finds who is standing at a venue")
 
   rivals.recordBattle("elm", true)
-  T.eq(#rivals.roster(), 3, "recording a battle keeps the roster whole")
+  T.eq(#rivals.roster(), 20, "recording a battle keeps the roster whole")
 
   run.release()
 end
@@ -94,14 +106,14 @@ do
     "showa_rivals loaded without arcade, contests or malls")
 
   local rivals = run.loader.exports.showa_rivals
-  T.eq(#rivals.roster(), 3, "the whole roster is still there")
+  T.eq(#rivals.roster(), 20, "the whole roster is still there")
   for _, entry in ipairs(rivals.roster()) do
     T.check(entry.location ~= nil,
       entry.name .. " was re-homed to a venue that exists")
   end
   -- and a tick must not reach for the missing mods
   rivals.debug.tick()
-  T.eq(#rivals.roster(), 3, "a tick with no feature mods is harmless")
+  T.eq(#rivals.roster(), 20, "a tick with no feature mods is harmless")
 
   run.release()
 end
