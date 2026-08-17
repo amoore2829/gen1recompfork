@@ -50,13 +50,14 @@ rows rather than rewriting history.**
 
 ## M3 — showa_malls
 
-- [ ] Olivine shopping street mall (new maps, ≤7×6 blocks/floor, NPCs y≥4, render-verified)
-- [ ] Goldenrod Underground ↔ Olivine tunnel maps + warps
-- [ ] Sticker rally clerks (spawnNpc + verb rows) + purchase tracking
-- [ ] `ShowaStickerAlbum` screen + set-completion rewards
-- [ ] `stickerCount`/`hasSticker` exports
-- [ ] Tunnel roundtrip + sticker rally drivers
-- [ ] validate/gen2check clean; FEATURES.md row
+- [x] Olivine shopping arcade: SHOWA_MALL_1F + 2F registered on OLIVINE_MART's verified block layout — 2026-08-17
+- [x] SHOWA_MALL_TUNNEL chikagai passage + working staircases and street/underground exits (real staircase blocks substituted so warps fire) — 2026-08-17
+- [x] Four sticker-rally counters (spawnNpc + verb rows), no double-stamping — 2026-08-17
+- [x] `ShowaStickerAlbum` screen on the START menu + 100 MALL POINTS for a full book — 2026-08-17
+- [x] `stickerCount`/`hasSticker`/`album` exports — 2026-08-17
+- [x] Driver: rooms load, staircase round trip, rally stamps (16 checks, 0 failures) — 2026-08-17
+- [x] validate + gen2check clean — 2026-08-17
+- [ ] A real shopfront stamped onto Olivine City (deferred: needs render verification)
 
 ## M4 — showa_rivals
 

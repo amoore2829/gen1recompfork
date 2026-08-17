@@ -1,0 +1,17 @@
+{
+  "id": "showa_malls",
+  "name": "Showa Malls",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "CONTENT",
+  "games": ["gen2"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "dependencies": ["showa_core@^0.1.0"],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "permissions": [],
+  "description": "An Olivine shopping arcade over two floors, joined to Goldenrod's underground by a chikagai passage, with a stamp rally: collect a sticker at every counter and claim the set prize at the info desk."
+}
