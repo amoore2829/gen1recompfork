@@ -144,6 +144,11 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
 - Facing a counter tile doubles the OBJECT lookup one cell further
   (`World:interactBody`), so an NPC directly behind a counter-collision
   tile is skipped in favor of whatever the doubled cell holds.
+- **A ListMenu row shares 17 glyph slots** between its label (drawn from
+  x=16) and its right column (right-aligned to x=152). Anything wider
+  collides into one mashed word. Budget 16 and the gap stays visible;
+  `Menu.WIDTH` in showa_devkit pins it in a test. Two collisions shipped
+  past green suites here — screenshot any new menu.
 - **`ctx.vm:showText` takes a text KEY, not a sentence.** It looks the key
   up in the cache's text table and falls back to the literal `"..."` when
   it misses, so passing prose changes state correctly and prints dots.
@@ -274,3 +279,17 @@ run: 32,063 checks green across 11 suites.
 game 2, FEATURES.md rows for the suite, and then the Phase 2 backlog
 (the remaining ~17 rivals are one data file each in
 `mods/showa_rivals/rivals/`, which is the framework paying off).
+
+### 2026-08-17 (dev tooling) — showa_devkit
+
+- `mods/showa_devkit` 0.1.0: a SHOWA DEV row on the START menu opening a
+  paged test kit (warp / cabinets / wallet / derby / stamps / rivals /
+  diagnostic). Pages for absent feature mods are hidden, so it runs on
+  any subset; requires only showa_core.
+- `menu.lua` is pure data and `main.lua` is the wiring, so the tree is
+  testable without a boot — 96 checks, plus an 18-check Gold driver.
+- Added `showa_rivals` `debug.sendAll(venueId)` so the kit can gather the
+  whole cast onto one map.
+- Two menu-layout collisions were caught by screenshot after the suites
+  were green; the glyph-budget rule is now in Gotchas and pinned by a
+  test.

@@ -17,6 +17,7 @@ the gotchas each cost a debugging cycle once).
 | [Showa Contests](#showa-contests) | Mod | 0.1.0 | Shipped | [mods/showa_contests/](mods/showa_contests/) |
 | [Showa Malls](#showa-malls) | Mod | 0.1.0 | Shipped | [mods/showa_malls/](mods/showa_malls/) |
 | [Showa Rivals](#showa-rivals) | Mod | 0.2.0 | Shipped | [mods/showa_rivals/](mods/showa_rivals/) |
+| [Showa Dev Kit](#showa-dev-kit) | Mod (dev tool) | 0.1.0 | Shipped | [mods/showa_devkit/](mods/showa_devkit/) |
 | [Gen 2 API Probe](#gen-2-api-probe) | Mod (dev tool) | 0.1.0 | Shipped | [mods/gen2_api_probe/](mods/gen2_api_probe/) |
 | ROM files gitignored | Repo hygiene | — | Shipped | [.gitignore](.gitignore) |
 
@@ -112,6 +113,21 @@ read, unpacked or copied.
 
 Suites: 38,509 pure sim checks, 82 headless (including a load with none of the
 optional dependencies present), 21-check Gold driver.
+
+### Showa Dev Kit
+
+A test menu for the whole suite, on the START menu as SHOWA DEV: warp to any
+venue, open any cabinet without paying, stock the wallet, open and settle a
+derby, stamp the rally, run the rival simulation forward or call the whole cast
+to where you are, and read a diagnostic of what is installed. Pages for a
+feature mod that is not installed are hidden, so it works on any subset.
+
+`menu.lua` is pure data, which is what lets the tree — including the
+install-dependent branches and the column widths — be tested without a boot.
+The width rule is there because two label collisions ("SEAKING DERBYSHUT",
+"SPARKS Lv6CHIKAGAI") shipped past green suites and were caught by screenshot.
+
+Suites: 96 menu checks, 18-check Gold driver.
 
 ### Gen 2 API Probe
 
