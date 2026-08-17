@@ -1,0 +1,32 @@
+return {
+  summary = "The Goldenrod Game Corner becomes a Showa-era arcade: an "
+    .. "EKANS snake cabinet, a capsule-toy gatcha machine, a token clerk, "
+    .. "and a high-score ledger other mods can post to.",
+  author = "amoore2829",
+  tags = { "arcade", "minigame", "gen2", "showa" },
+  differences = {
+    changed = {},
+    added = {
+      "three NPCs on the Goldenrod Game Corner floor: a token clerk "
+        .. "(sells 10 GAME TOKENS for $500), the EKANS cabinet (1 token), "
+        .. "and the gatcha machine (3 tokens)",
+      "the EKANS minigame: seeded snake on a 18x12 LCD-green playfield",
+      "the gatcha: weighted prize drum with COMMON/UNCOMMON/RARE tiers "
+        .. "and duplicate protection on the two trophies",
+      "arcade records post to the Showa town news feed",
+    },
+    known = {
+      "v1 gatcha prizes are collection pieces, not bag items -- the "
+        .. "give-item seam on Gold is a later drop",
+      "the clerk buys nothing back; tokens are one-way, like the era",
+      "cabinet art is procedural placeholder pending original sprites",
+      "structure follows martin2844's Blackjack Corner "
+        .. "(games/<id>/rules+screen pattern); no code was copied",
+    },
+  },
+  credits = {
+    "martin2844/gen1recomp-blackjack-corner (MIT) for the games-folder "
+      .. "architecture pattern",
+  },
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}

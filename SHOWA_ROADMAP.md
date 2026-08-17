@@ -25,15 +25,17 @@ rows rather than rewriting history.**
 
 ## M1 — showa_core + showa_arcade (first playable)
 
-- [ ] `showa_core`: wallet, clock (wraps Gen 2 clock), scheduler, news, venues, minigame base — each pure-Lua with unit suite
-- [ ] `showa_core` exports wired; save schema v1 + migration discipline
-- [ ] `showa_arcade`: Goldenrod Game Corner interior patch (cabinets + gatcha NPCs)
-- [ ] Ekans snake (pure `rules.lua` state machine + screen + view)
-- [ ] Gatcha machine (weighted pool, capsule screen, trophy duplicate protection)
-- [ ] ARCADE_TOKEN currency + counter clerk
-- [ ] High-score table + `submitScore`/`highScore` exports (rival seam)
-- [ ] Unit suites + arcade entry driver + scripted Ekans game driver
-- [ ] validate/gen2check/lint clean; FEATURES.md row
+- [x] `showa_core`: wallet, clock (wraps Gen 2 clock events), scheduler, news, venues, minigame base — 40/40 pure checks — 2026-08-17
+- [x] `showa_core` exports wired; save schema v1; ShowaNews screen on START menu; 13/13 headless checks — 2026-08-17
+- [x] `showa_arcade`: clerk + EKANS cabinet + gatcha NPCs on the Game Corner floor (runtime-object seam; placements verified against bgEvent/object/collision dumps) — 2026-08-17
+- [x] Ekans snake (pure seeded `rules.lua` + procedural LCD view) — 2026-08-17
+- [x] Gatcha machine (weighted pool, capsule screen, trophy duplicate protection, RARE news posts) — 2026-08-17
+- [x] ARCADE_TOKEN currency + counter clerk (10 tokens / $500 via `save.player.money`) — 2026-08-17
+- [x] High-score ledger + `submitScore`/`highScore`/`gatchaOwned` exports (rival seam) — 2026-08-17
+- [x] Suites: 2017 rules checks + 12 headless + end-to-end Gold driver (18 checks, 0 failures) — 2026-08-17
+- [x] validate + gen2check clean on both mods — 2026-08-17
+- [ ] FEATURES.md rows (fold into suite polish)
+- [ ] DDR as arcade game 2 (moved to M5 as planned)
 
 ## M2 — showa_contests
 

@@ -117,6 +117,24 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
   after the loop — clear the direction keys and wait for
   `world.player.moving == false` before reading player positions, or every
   cell read is racy (this masqueraded as an NPC-interaction engine bug).
+- `mod.world:spawnNpc` answers `nil, err` (NOT an error) until the
+  overworld is live — a `pcall`-and-latch spawn guard silently gives up
+  forever. Track per-NPC returned ids and retry on the next
+  `game.ready`/`map.entered`.
+- **Verify NPC placement against the map's bgEvents AND objects, not just
+  collision.** The Game Corner's machine banks are bgEvent columns
+  (x=6-7, 12-13, 18 at y=6..11) that run cart scripts ("You have no
+  coins."), and vanilla NPCs occupy more cells ((5,10), (8,7), (11,10),
+  (14,8), (17,6)). A mod NPC placed on either gets shadowed. Dump all
+  three layers from the gold cache before placing (this is house rule #3
+  — "verify against the data, then against the render" — in Gen 2 form).
+- Facing a counter tile doubles the OBJECT lookup one cell further
+  (`World:interactBody`), so an NPC directly behind a counter-collision
+  tile is skipped in favor of whatever the doubled cell holds.
+- When a driver closes a minigame's results card, do NOT mash extra A
+  presses while still facing the cabinet — each one is another paid play.
+  Driver checks on `mod.save`-backed values must be relative deltas: the
+  save persists across driver runs of the same identity.
 
 ## Session log (append entries; newest last)
 
@@ -144,3 +162,27 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
 - `modkit validate` + `gen2check` green on the probe.
 - Created SHOWA_ROADMAP.md + this handover doc.
 - Committed on `feature/showa-m0`, merged to `dev`.
+
+### 2026-08-17 (later) — M1: showa_core + showa_arcade land
+
+- `mods/showa_core` 0.1.0: wallet/clock/scheduler/news/venues (pure libs)
+  + minigame scaffold + ShowaNews screen + full export surface. 40/40
+  pure checks, 13/13 headless, validate + gen2check clean.
+- `mods/showa_arcade` 0.1.0: token clerk (reads/writes
+  `game.save.player.money`), EKANS cabinet (seeded snake on the
+  scaffold), gatcha (weighted pool + duplicate protection + reveal
+  screen), high-score ledger with news posts and the
+  `submitScore`/`highScore`/`gatchaOwned` rival seam. 2017 rules checks,
+  12 headless, Gold driver 18 checks / 0 failures, validate + gen2check
+  clean.
+- Debugging that produced the new Gotchas above: NPC placement shadowed
+  by the Game Corner's machine bgEvents and a vanilla NPC at (14,8); the
+  spawn guard latching on a nil spawn; results-card A-mash re-buying
+  plays; per-identity save persistence in driver checks.
+- Both mods committed on `feature/showa-m1`, merged to `dev`, pushed.
+
+**Next session picks up at M2 (`showa_contests`)**: fish derby at Lake of
+Rage first (judge NPC + `encounter.fishing` weighting + size records),
+then wrap the engine's own Bug Contest (`bug_contest.scored`). The
+framework files and design live in the plan
+(`~/.claude/plans/i-would-liek-to-melodic-hejlsberg.md`) and the roadmap.
