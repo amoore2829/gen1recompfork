@@ -39,12 +39,14 @@ rows rather than rewriting history.**
 
 ## M2 — showa_contests
 
-- [ ] Shared framework: `session.lua` + `judging.lua` (pure, unit-tested)
-- [ ] Fish derby at Lake of Rage (judge NPC, Seaking-weighted fishing, size records, leaderboard)
-- [ ] Bug Contest wrap (engine already runs it: hook `bug_contest.scored`, add leaderboard + rival competitors)
-- [ ] `registerCompetitor` export seam
-- [ ] Drivers: fish derby with forced Seaking; bug contest scored
-- [ ] validate/gen2check clean; FEATURES.md row
+- [x] Shared framework: `session.lua` + `judging.lua` (pure, 76 checks) — 2026-08-17
+- [x] Fish derby at Lake of Rage (judge NPC on the south shore, deterministic size records, standings) — 2026-08-17
+- [x] Bug Contest wrap (`bug_contest.scored` lands in the same record book) — 2026-08-17
+- [x] `registerCompetitor` / `records` / `isSessionActive` export seam — 2026-08-17
+- [x] Driver: full derby on Gold with a forced Seaking (12 checks, 0 failures) — 2026-08-17
+- [x] validate + gen2check clean — 2026-08-17
+- [ ] Seaking-weighted `encounter.fishing` at the lake (deferred to polish)
+- [ ] Entry fee, timer, and placement prizes (deferred to polish)
 
 ## M3 — showa_malls
 

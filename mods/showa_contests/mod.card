@@ -1,0 +1,29 @@
+return {
+  summary = "The Lake of Rage Seaking Derby: a judge runs "
+    .. "catch-the-biggest sittings with standings, persistent records "
+    .. "and news coverage, and Gold's own Bug Contest scores join the "
+    .. "same record book.",
+  author = "amoore2829",
+  tags = { "contest", "fishing", "gen2", "showa" },
+  differences = {
+    changed = {},
+    added = {
+      "a derby judge on the Lake of Rage south shore: talk to open a "
+        .. "sitting, talk again to weigh in",
+      "deterministic fish measurement from level and DVs, with a "
+        .. "SEAKING bonus",
+      "standings against a competitor field other mods fill in "
+        .. "(the rivals' seam), and persistent fish/bug records",
+      "Bug Contest scores recorded from the engine's own contest",
+    },
+    known = {
+      "v1 has no entry fee, no timer, and no prizes -- the sitting ends "
+        .. "when you report back",
+      "encounter weighting toward SEAKING is not applied yet; the derby "
+        .. "measures whatever you actually land",
+      "one sitting lives in memory, so a derby left open ends at reboot",
+    },
+  },
+  credits = {},
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}
