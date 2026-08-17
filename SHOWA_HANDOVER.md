@@ -144,6 +144,13 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
 - Facing a counter tile doubles the OBJECT lookup one cell further
   (`World:interactBody`), so an NPC directly behind a counter-collision
   tile is skipped in favor of whatever the doubled cell holds.
+- Do NOT tick a world simulation on `map.entered`: it moves everything
+  at the exact moment the player walks in to look at it. Tick on
+  `map.exited` (and a step counter) so a place is as the news described
+  it when you arrive.
+- In a driver, `game.world` is the raw World object, NOT the mod-facing
+  WorldAPI: `game.world:warpTo` fails where `mod.world:warpTo` works.
+  Expose a debug warp from the mod and call that.
 - When a driver closes a minigame's results card, do NOT mash extra A
   presses while still facing the cabinet — each one is another paid play.
   Driver checks on `mod.save`-backed values must be relative deltas: the
@@ -232,10 +239,31 @@ step (house rule #3) to matter most here.
 - 69 pure checks, 10 headless, mall driver 16 checks / 0 failures,
   validate + gen2check clean.
 
-**Next session picks up at M4 (`showa_rivals`)** — the last Phase 1
-milestone: the pure `sim/` framework (venue-graph scheduled appearances,
-seeded and deterministic), one trainer class per rival with a
-`trainer.party` substitution, and the first three rivals (Elm/Togepi,
-Pichu arcade rat wired to showa_arcade's score exports, Azurill wired to
-showa_contests' `registerCompetitor`). Both integration seams it needs are
-already shipped and tested.
+### 2026-08-17 (M4) — showa_rivals lands; PHASE 1 COMPLETE
+
+- `mods/showa_rivals` 0.1.0: `sim/` (rng, growth, advance) is pure and
+  seeded, so a rival's whole life replays from its seed; 1000-tick soak
+  per rival holds every invariant (always at a real venue, never in
+  debt, legal party size, never loses levels). Three rivals ship: ELM,
+  SPARKS (posts real EKANS scores to showa_arcade), NAGISA (enters
+  Seaking Derby sittings through showa_contests' registerCompetitor).
+- Battle parties are substituted live through `trainer.party`, so the
+  team you fight is the team the news has been reporting.
+- 29,778 sim checks, 27 headless (including a load with NONE of the
+  optional dependencies), driver 21 checks / 0 failures, validate +
+  gen2check clean.
+- Two fixes worth remembering, both now in Gotchas:
+  ticking the simulation on `map.entered` moved rivals away at the
+  moment the player walked in to see them (now ticks on `map.exited`),
+  and drivers must warp through the mod's own WorldAPI-backed helper,
+  not `game.world:warpTo`.
+
+**Phase 1 is complete.** All five suite mods plus the probe are on `dev`,
+each with pure suites, headless gen-2 suites, a live Gold driver at zero
+failures, and clean `modkit validate` + `gen2check`. Whole-project suite
+run: 32,063 checks green across 11 suites.
+
+**Next session picks up at M5 (polish)** — see the roadmap: DDR as arcade
+game 2, FEATURES.md rows for the suite, and then the Phase 2 backlog
+(the remaining ~17 rivals are one data file each in
+`mods/showa_rivals/rivals/`, which is the framework paying off).

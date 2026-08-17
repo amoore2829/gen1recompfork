@@ -61,15 +61,19 @@ rows rather than rewriting history.**
 
 ## M4 — showa_rivals
 
-- [ ] `sim/` pure framework: advance, goals, growth, personality (seeded, deterministic; 1000-tick soak test)
-- [ ] Venue-graph scheduled appearances (no tile pathing in v1)
-- [ ] Rival battle seam: trainer class per rival + `trainer.party` substitution
-- [ ] Rival 1: Elm (Togepi; New Bark lab / Ruins of Alph; story rival)
-- [ ] Rival 2: Pichu arcade rat (arcade score integration)
-- [ ] Rival 3: Azurill fishing prodigy (fish derby competitor)
-- [ ] News feed integration; `rival_dex` screen off START menu
-- [ ] Appearance + battle drivers
-- [ ] validate/gen2check clean; FEATURES.md row
+- [x] `sim/` pure framework: rng, growth, advance (seeded, deterministic; 1000-tick soak per rival) — 2026-08-17
+- [x] Venue-graph scheduled appearances; rivals spawn where they stand and leave when they move on — 2026-08-17
+- [x] Rival battle seam: trainer class per rival + live-party substitution through `trainer.party` — 2026-08-17
+- [x] Rival 1: ELM (Togepi; Elm's Lab / Ruins of Alph; story rival) — 2026-08-17
+- [x] Rival 2: SPARKS the Pichu arcade rat (really posts EKANS scores) — 2026-08-17
+- [x] Rival 3: NAGISA the Azurill fishing prodigy (enters derby sittings) — 2026-08-17
+- [x] News feed integration; `ShowaRivalDex` screen off the START menu — 2026-08-17
+- [x] Driver: ticking, appearing, talking, derby entry (21 checks, 0 failures) — 2026-08-17
+- [x] Loads correctly with NONE of its optional dependencies (asserted in the headless suite) — 2026-08-17
+- [x] validate + gen2check clean — 2026-08-17
+- [ ] Rival-vs-rival battles and gym challenges (deferred)
+
+**Phase 1 complete: all four feature groups shipped and driver-verified on Gold.**
 
 ## M5 — Polish pass
 

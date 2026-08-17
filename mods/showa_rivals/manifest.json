@@ -1,0 +1,17 @@
+{
+  "id": "showa_rivals",
+  "name": "Showa Rivals",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "QUEST",
+  "games": ["gen2"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 120,
+  "dependencies": ["showa_core@^0.1.0"],
+  "optional_dependencies": ["showa_arcade", "showa_contests", "showa_malls"],
+  "conflicts": [],
+  "permissions": [],
+  "description": "Rivals who live their own lives: they travel Johto on their own, train, catch, and turn up where their interests take them. Ships kid Professor Elm, an arcade rat who really does beat your high scores, and a fishing prodigy who enters the derby against you."
+}
