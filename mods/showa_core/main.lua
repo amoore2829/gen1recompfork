@@ -10,6 +10,7 @@ local Scheduler = require("mods.showa_core.lib.scheduler")
 local News = require("mods.showa_core.lib.news")
 local Venues = require("mods.showa_core.lib.venues")
 local Minigame = require("mods.showa_core.lib.minigame")
+local Dialogue = require("mods.showa_core.lib.dialogue")
 
 return function(mod)
   -- ------- persistent state, one versioned blob
@@ -124,5 +125,12 @@ return function(mod)
 
   mod.exports.minigame = {
     screen = Minigame.screen,
+  }
+
+  -- Saying something from a verb is NOT as simple as handing the VM a
+  -- sentence; see lib/dialogue.lua.  Every Showa mod goes through this.
+  mod.exports.dialogue = {
+    say = Dialogue.say,
+    lastShown = Dialogue.lastShown,
   }
 end

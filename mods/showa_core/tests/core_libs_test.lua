@@ -12,6 +12,7 @@ local Scheduler = require("mods.showa_core.lib.scheduler")
 local News = require("mods.showa_core.lib.news")
 local Venues = require("mods.showa_core.lib.venues")
 local Minigame = require("mods.showa_core.lib.minigame")
+local Dialogue = require("mods.showa_core.lib.dialogue")
 
 -- ------- wallet
 
@@ -141,6 +142,46 @@ do
   screen:update()
   T.eq(popped, 1, "A on the results card pops the screen")
   T.eq(doneScore, 42, "and hands the score to onDone")
+end
+
+-- ------- dialogue
+--
+-- The regression this exists for: Vm:showText takes a text KEY and
+-- prints the literal "..." for one it cannot find, so handing it a
+-- sentence changes state correctly and says nothing.  A fake VM that
+-- behaves the way the real one does is enough to pin it.
+
+do
+  local shown = {}
+  local vm = {
+    text = {},
+    lastTextKey = nil,
+    showText = function(self, key)
+      self.lastTextKey = key
+      local body = self.text[key]
+      if not body or body == "" then body = "..." end
+      shown[#shown + 1] = body
+    end,
+  }
+  local ctx = { vm = vm }
+
+  T.eq(Dialogue.say(ctx, "Welcome to the arcade!"), true, "say reports it spoke")
+  T.eq(shown[1], "Welcome to the arcade!",
+    "the words reach the box, not \"...\"")
+  T.eq(Dialogue.lastShown(ctx), "Welcome to the arcade!",
+    "and are readable back for a driver to assert on")
+
+  Dialogue.say(ctx, "A second line.")
+  T.eq(shown[2], "A second line.", "a later line lands too")
+  T.check(vm.lastTextKey ~= nil, "and it went through a real key")
+
+  -- the raw call is what used to happen, and is what must never come back
+  vm:showText("A sentence handed straight in.")
+  T.eq(shown[3], "...", "proof: a raw sentence really does print as dots")
+
+  T.eq(Dialogue.say(nil, "x"), false, "no ctx is a refusal, not a crash")
+  T.eq(Dialogue.say({}, "x"), false, "no vm is a refusal too")
+  T.eq(Dialogue.say(ctx, nil), false, "and so is no body")
 end
 
 T.finish("showa_core libs")
