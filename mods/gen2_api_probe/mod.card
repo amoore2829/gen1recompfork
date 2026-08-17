@@ -1,0 +1,21 @@
+return {
+  summary = "Dev diagnostic: counts which mod-API seams actually fire on a "
+    .. "Gold boot, so Gen 2 mods are built on measurements, not claims.",
+  author = "amoore2829",
+  tags = { "dev", "tool", "gen2", "diagnostic" },
+  differences = {
+    changed = {},
+    added = {
+      "a PROBE row on Gold's START menu opening a live seam-count report",
+      "a hidden SHOWA_PROBE_ROOM map and SHOWA_PROBE trainer class "
+        .. "(registration probes; nothing routes the player to them)",
+    },
+    known = {
+      "dev tool: the counters reset every boot by design",
+      "wraps input.step and other hot hooks with counters; disable it "
+        .. "when not auditing",
+    },
+  },
+  credits = {},
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}
