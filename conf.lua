@@ -6,18 +6,30 @@ function love.conf(t)
 
   local editor = os.getenv("POKEPORT_EDITOR") == "1"
   local developer = os.getenv("POKEPORT_DEV") == "1"
+  local companion = nil
   if arg then
     for _, a in ipairs(arg) do
       if a == "--editor" then editor = true end
       if a == "--developer" then developer = true end
+      local port, token = a:match("^%-%-display%-companion=(%d+),([%w]+)$")
+      if port then companion = { port = tonumber(port), token = token } end
     end
   end
   -- main.lua runs in the same Lua state right after conf.lua; stash the
   -- decision in a global so it doesn't need to reparse `arg`.
   _G.POKEPORT_EDITOR_MODE = editor
   _G.POKEPORT_DEV_MODE = developer
+  _G.POKEPORT_DISPLAY_COMPANION = companion
 
-  if editor then
+  if companion then
+    t.identity = "pokemon-love2d-companion"
+    t.window.title = "gen1recomp Secondary Display"
+    t.window.width = 640
+    t.window.height = 576
+    t.window.minwidth = 160
+    t.window.minheight = 144
+    t.window.resizable = true
+  elseif editor then
     -- Same identity as the game, deliberately: the editor edits the game's
     -- saves and reads the game's ROM cache, both of which live under this
     -- folder.  A private editor identity would point love.filesystem at an
@@ -51,14 +63,25 @@ function love.conf(t)
   end
   t.version = love._os == "iOS" and "12.0" or "11.5"
   t.window.vsync = 1
-  t.modules.joystick = true
+  t.modules.audio = not companion
+  t.modules.joystick = not companion
   t.modules.physics = false
 
   -- love.system is not loaded during love.conf; love._os is set by the
   -- engine before conf runs (LÖVE 11.x / 11.5).
   local osName = love._os
   local mobile = osName == "Android" or osName == "iOS"
-  if mobile then
+  local nx = osName == "NX"
+  if nx then
+    -- Switch (love-nx): hint handheld 720p. SDL auto-switches portable↔dock
+    -- (720p↔1080p) only when the window is resizable and not exclusive
+    -- fullscreen; NxDisplay.sync also applies the size on boot and dock change.
+    t.window.width = 1280
+    t.window.height = 720
+    t.window.fullscreen = false
+    t.window.resizable = true
+    t.window.highdpi = false
+  elseif mobile then
     -- resizable is what unlocks orientation.  SDL's Android backend, given no
     -- SDL_HINT_ORIENTATIONS (LÖVE sets none), calls setRequestedOrientation
     -- at window creation -- FULL_SENSOR when the window is resizable (rotates
@@ -70,6 +93,10 @@ function love.conf(t)
     -- just work.  FULL_SENSOR ignores the device's rotation lock, so
     -- GameActivity.setOrientationBis remaps it to FULL_USER after SDL has
     -- run: same orientations allowed, but auto-rotate being off now wins.
+    -- A persisted ORIENTATION lock (#592) overrides all of this after boot:
+    -- src/core/Orientation.lua sets SDL_HINT_ORIENTATIONS over the FFI and
+    -- re-triggers the request, from main.lua for the launcher and from
+    -- Game:applyOptions in game.
     -- iOS follows the Info.plist orientations
     -- (see mobile/ios/overlays/love-ios.plist, now portrait + landscape).
     t.window.resizable = true

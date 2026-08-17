@@ -134,13 +134,15 @@ function SummaryMenu:draw()
   Font.draw(("%03d"):format(def.dex or 0), 24, 56)
 
   if self.page == 1 then
-    -- HP bar (11,3) + numbers row 4, STATUS/ (9,6), the DrawLineBox
-    -- bracket around the name/HP block, and PrintLevel at (14,2).  The
-    -- level belongs to page 1 ONLY: StatusScreen2 opens with ClearScreenArea
-    -- over (9,2) 5x10 (status_screen.asm:303-305), which wipes it. #280
+    -- level is page 1 only: StatusScreen2 opens with ClearScreenArea over
+    -- (9,2) 5x10 (status_screen.asm:303-305). #280
     printLevel(14, 2, mon.level)
     drawLineBox(19, 1, 6, 10)
-    HudTiles.drawHPBar(data, 11, 3, mon, 1) -- wHPBarType 1
+    -- engine/pokemon/status_screen.asm:120-125
+    local PaletteFX = require("src.render.PaletteFX")
+    local barZoned = PaletteFX.shader() ~= nil
+                     and PaletteFX.pal(data, "GREENBAR") ~= nil
+    HudTiles.drawHPBar(data, 11, 3, mon, 1, barZoned) -- wHPBarType 1
     Font.draw(("%3d/%3d"):format(mon.hp, mon.stats.hp), 96, 32)
     Font.draw(Strings("STATUS/"), 72, 48)
     Font.draw(mon.status or "OK", 128, 48)
@@ -203,7 +205,8 @@ function SummaryMenu:draw()
         local mdef = data.moves[mv.id]
         Font.draw(mdef.name, 16, y)
         Font.draw(Strings("PP"), 88, y + 8)
-        Font.draw(("%2d/%2d"):format(mv.pp, mdef.pp), 112, y + 8)
+        local maxPP = mdef.pp + (mv.ppUps or 0) * math.floor(mdef.pp / 5)
+        Font.draw(("%2d/%2d"):format(mv.pp, maxPP), 112, y + 8)
       else
         Font.draw("-", 16, y)
         Font.draw("--", 112, y + 8)

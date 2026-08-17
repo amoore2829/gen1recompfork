@@ -5,11 +5,10 @@
 --   "update_check_cmd"   in:  { cmd = "check" | "download" | "quit" }
 --   "update_check_state" out: { status, latest, progress, error }
 --
--- Transport is curl shelled out via io.popen (curl ships on macOS, Windows 10+
--- and desktop Linux).  Everything is wrapped so a missing curl, an HTTP error,
--- or a hung download degrades to a "error"/"needs_full" state rather than
--- blocking or crashing the game.  On Android curl is absent and the check
--- soft-fails to "error", which the UI hides.
+-- Transport is HostShell: curl via io.popen on desktop, the JNI
+-- love.system.httpDownload bridge on Android (same path the mod catalog
+-- already uses).  A missing transport, an HTTP error, or a hung download
+-- degrades to "error"/"needs_full" rather than blocking or crashing the game.
 --
 -- Fresh love threads do not carry the "src.*" package searcher, so sibling
 -- modules are pulled in with love.filesystem.load exactly like
@@ -45,7 +44,12 @@ local Boot    = loadModule("src/update/Boot.lua")
 local cmdCh   = love.thread.getChannel("update_check_cmd")
 local stateCh = love.thread.getChannel("update_check_state")
 
-local function post(t) stateCh:push(t) end
+local function post(t)
+  if pending and type(t) == "table" and t.notes == nil then
+    t.notes = pending.notes
+  end
+  stateCh:push(t)
+end
 
 local osName    = (love.system and love.system.getOS and love.system.getOS()) or ""
 local isWindows = osName == "Windows"
@@ -58,8 +62,11 @@ local API_URL = "https://api.github.com/repos/bryanthaboi/gen1recomp/releases/la
 local pending = nil
 
 -- ---------------------------------------------------------------------------
--- shell / curl
+-- shell / fetch
 -- ---------------------------------------------------------------------------
+
+local UA = "gen1recomp-updater"
+local GH_ACCEPT = "application/vnd.github+json"
 
 local function shq(s)
   s = tostring(s)
@@ -69,28 +76,17 @@ local function shq(s)
   return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
--- run curl and return its response body (text), or nil on any failure.  Used
--- for the small text resources (release JSON, sums file); -f makes curl exit
--- non-zero and emit nothing on an HTTP error, so an empty read is a failure.
-local function curlCapture(url)
-  local cmd = "curl -fsSL --connect-timeout 10 --max-time 40 "
-    .. "-H " .. shq("User-Agent: gen1recomp-updater") .. " "
-    .. "-H " .. shq("Accept: application/vnd.github+json") .. " "
-    .. shq(url)
-  local pipe = HostShell.popen(cmd)
-  if not pipe then return nil end
-  local out = pipe:read("*a")
-  pipe:close()
-  if not out or out == "" then return nil end
-  return out
+-- Small text resources (release JSON, sums file) through HostShell so Android
+-- hits the JNI bridge instead of a curl binary that is never on the device.
+local function fetchText(url, accept)
+  if not HostShell then return nil end
+  local body = HostShell.httpGet(url, UA, accept)
+  if type(body) ~= "string" or body == "" then return nil end
+  return body
 end
 
-local function haveCurl()
-  local pipe = HostShell.popen("curl --version")
-  if not pipe then return false end
-  local out = pipe:read("*a")
-  pipe:close()
-  return out ~= nil and out:find("curl", 1, true) ~= nil
+local function canFetch()
+  return HostShell and HostShell.canFetch()
 end
 
 -- ---------------------------------------------------------------------------
@@ -150,8 +146,31 @@ local function gatePasses(rel)
   local info = Boot.probePayload(rel)
   if not info then return true end
   local shell = (Version and Version.shell) or 1
-  if info.minShell and info.minShell > shell then return false end
-  return true
+  local payloadHost = (Version and Version.payloadHost) or "love"
+  if Boot.canHost then return Boot.canHost(info, shell, payloadHost) end
+  return not (info.minShell and info.minShell > shell)
+end
+
+local function cacheNotes(ver, notes)
+  if not (ver and type(notes) == "string" and notes ~= "" and Json) then return end
+  if not (love and love.filesystem) then return end
+  pcall(function()
+    love.filesystem.createDirectory("updates")
+    local cachePath = "updates/notes_cache.json"
+    local existing = {}
+    if love.filesystem.getInfo and love.filesystem.getInfo(cachePath) then
+      local text = love.filesystem.read(cachePath)
+      if text then
+        local ok, doc = pcall(Json.decode, text)
+        if ok and type(doc) == "table" then existing = doc end
+      end
+    end
+    existing[ver] = notes
+    local ok, encoded = pcall(Json.encode, existing)
+    if ok and encoded then
+      love.filesystem.write(cachePath, encoded)
+    end
+  end)
 end
 
 -- ---------------------------------------------------------------------------
@@ -161,12 +180,14 @@ end
 local function doCheck()
   post({ status = "checking" })
 
-  if not haveCurl() then
-    post({ status = "error", error = "curl not available" })
+  if not canFetch() then
+    -- No curl and no JNI bridge: the chip becomes "Open releases" so a tap
+    -- still does something instead of retrying a check that cannot succeed.
+    post({ status = "needs_full" })
     return
   end
 
-  local body = curlCapture(API_URL)
+  local body = fetchText(API_URL, GH_ACCEPT)
   if not body then
     post({ status = "error", error = "release check failed" })
     return
@@ -178,6 +199,9 @@ local function doCheck()
     return
   end
   pending = rel
+  if rel.version and type(rel.notes) == "string" and rel.notes ~= "" then
+    cacheNotes(rel.version, rel.notes)
+  end
 
   -- Unstamped dev build: the working tree always looks "newer", so never
   -- pester the developer with an update (contract item, Check design).
@@ -203,7 +227,7 @@ local function doCheck()
   -- pulling the bytes again.
   local finalRel = "updates/" .. rel.payloadName
   if love.filesystem.getInfo(finalRel) then
-    local sums = curlCapture(rel.sums.url)
+    local sums = fetchText(rel.sums.url)
     if sums and verifyPayload(finalRel, rel.payloadName, sums) then
       if gatePasses(finalRel) == false then
         love.filesystem.remove(finalRel)
@@ -234,6 +258,11 @@ local function launchDownload(url, partAbs, doneAbs)
     local batRel = "updates/dl.bat"
     love.filesystem.write(batRel,
       "@echo off\r\n"
+      -- start /b hands the child our cwd, the install folder, and the
+      -- detached cmd.exe held that folder un-movable for the rest of the
+      -- transfer after the game exited (#727).  Every path below is
+      -- absolute, so park the child in its own directory (the save dir).
+      .. "cd /d \"%~dp0\"\r\n"
       .. "curl -fsSL --connect-timeout 15 --max-time 900 -o \""
       .. partAbs .. "\" \"" .. url .. "\"\r\n"
       .. "type nul > \"" .. doneAbs .. "\"\r\n")
@@ -265,31 +294,52 @@ local function doDownload()
   local doneAbs = saveDir .. "/updates/" .. rel.payloadName .. ".done"
   local size    = rel.payload.size or 0
 
-  launchDownload(rel.payload.url, partAbs, doneAbs)
+  if HostShell and HostShell.haveCurl() then
+    launchDownload(rel.payload.url, partAbs, doneAbs)
 
-  -- poll the .part size for progress until curl drops the done-marker; a
-  -- stalled or run-away transfer breaks out and lets verification fail cleanly
-  local waited, lastSize, lastChange = 0, -1, 0
-  while true do
-    if love.filesystem.getInfo(doneRel) then break end
-    local pinfo = love.filesystem.getInfo(partRel)
-    local cur = (pinfo and pinfo.size) or 0
-    if size > 0 then
-      local p = cur / size
-      if p > 0.999 then p = 0.999 end -- 1.0 is reserved for "ready"
-      post({ status = "downloading", latest = rel.version, progress = p })
-    else
-      post({ status = "downloading", latest = rel.version })
+    -- poll the .part size for progress until curl drops the done-marker; a
+    -- stalled or run-away transfer breaks out and lets verification fail cleanly
+    local waited, lastSize, lastChange = 0, -1, 0
+    while true do
+      -- A queued quit means the window already closed.  Bail so the join in
+      -- Check.shutdown does not hold the dead window's process (and, on
+      -- Windows, its folder) open for up to the whole transfer (#727).  The
+      -- quit stays on the channel for the command loop; the detached curl
+      -- times out on its own and the next launch's doCheck verifies and
+      -- re-offers whatever landed.
+      local peeked = cmdCh:peek()
+      if type(peeked) == "table" and peeked.cmd == "quit" then return end
+      if love.filesystem.getInfo(doneRel) then break end
+      local pinfo = love.filesystem.getInfo(partRel)
+      local cur = (pinfo and pinfo.size) or 0
+      if size > 0 then
+        local p = cur / size
+        if p > 0.999 then p = 0.999 end -- 1.0 is reserved for "ready"
+        post({ status = "downloading", latest = rel.version, progress = p })
+      else
+        post({ status = "downloading", latest = rel.version })
+      end
+      if cur ~= lastSize then lastSize, lastChange = cur, waited end
+      if waited - lastChange > 60 then break end -- 60s with no growth: give up
+      if waited > 960 then break end             -- absolute ceiling
+      love.timer.sleep(0.25)
+      waited = waited + 0.25
     end
-    if cur ~= lastSize then lastSize, lastChange = cur, waited end
-    if waited - lastChange > 60 then break end -- 60s with no growth: give up
-    if waited > 960 then break end             -- absolute ceiling
-    love.timer.sleep(0.25)
-    waited = waited + 0.25
+    love.filesystem.remove(doneRel)
+  else
+    -- Android JNI bridge: blocking write, same as fetch_worker.  Progress
+    -- cannot be sampled from inside httpDownload.
+    local ok = HostShell and HostShell.httpDownload(
+      rel.payload.url, partAbs, UA, nil, 900)
+    if not ok then
+      love.filesystem.remove(partRel)
+      post({ status = "error", error = "download failed" })
+      return
+    end
+    post({ status = "downloading", latest = rel.version, progress = 0.999 })
   end
-  love.filesystem.remove(doneRel)
 
-  local sums = curlCapture(rel.sums and rel.sums.url or "")
+  local sums = fetchText(rel.sums and rel.sums.url or "")
   if not sums then
     love.filesystem.remove(partRel)
     post({ status = "error", error = "checksum fetch failed" })

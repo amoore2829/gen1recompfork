@@ -370,6 +370,32 @@ check(math.abs(r - 0.4) < 1e-6 and math.abs(g - 0.7) < 1e-6
       and math.abs(b - 0.9) < 1e-6,
       "a trueColor pic keeps a pixel no 4-shade palette contains")
 
+-- trainers.trueColor is the same opt-out on a class portrait
+BattleState.invalidate()
+local trainerPicData = {
+  trainers = {
+    SHADED = { pic = "assets/generated/battle/front/shaded.png" },
+    FULLCOLOR = { pic = "assets/generated/battle/front/full.png",
+                  trueColor = true },
+    REUSED = { basePic = "FULLCOLOR" },
+  },
+  palettes = { palettes = { MEWMON = monPalette }, pokemon = {} },
+}
+local shadedTrainer = BattleState.trainerSprite(trainerPicData,
+  trainerPicData.trainers.SHADED)
+r, g, b = shadedTrainer.data:getPixel(0, 0)
+check(r == 0 and g == 0 and b == 1,
+      "a 4-shade trainer pic is palette-quantized onto its shade bucket")
+local fullTrainer = BattleState.trainerSprite(trainerPicData,
+  trainerPicData.trainers.FULLCOLOR)
+r, g, b = fullTrainer.data:getPixel(0, 0)
+check(math.abs(r - 0.4) < 1e-6 and math.abs(g - 0.7) < 1e-6
+      and math.abs(b - 0.9) < 1e-6,
+      "a trueColor trainer pic keeps a pixel no 4-shade palette contains")
+check(BattleState.trainerTrueColor(trainerPicData,
+        trainerPicData.trainers.REUSED) == true,
+      "a basePic reuse inherits the base portrait's trueColor flag")
+
 -- ------- trueColor: the colors == false zone sentinel
 
 check(PaletteFX.zone(nil, 0, 0, 1, 1) == nil, "nil colors is still no zone")
@@ -428,16 +454,42 @@ local spriteReg = Registry.new("sprites", Schemas.REGISTRIES.sprites)
 spriteReg:register("SPRITE_TITLE_LOGO",
                    { image = "mods/logo/logo.png", frames = 1,
                      trueColor = true }, "logo_mod")
+spriteReg:register("SPRITE_LARGE_ACTOR",
+                   { image = "mods/actor/actor.png", frames = 6,
+                     walker = true, frameWidth = 32, frameHeight = 24,
+                     anchorX = 16, anchorY = 24, trueColor = true },
+                   "actor_mod")
 local logoDef = spriteReg:get("SPRITE_TITLE_LOGO")
 check(Schemas.check(Schemas.REGISTRIES.sprites, "sprites", "SPRITE_TITLE_LOGO",
                     logoDef, "register"),
       "a trueColor sprites record validates against the catalog schema")
 check(logoDef.trueColor == true, "and keeps the flag through the merge")
+local largeDef = spriteReg:get("SPRITE_LARGE_ACTOR")
+check(Schemas.check(Schemas.REGISTRIES.sprites, "sprites", "SPRITE_LARGE_ACTOR",
+                    largeDef, "register"),
+      "a variable-size sprites record validates against the catalog schema")
 
 Renderer:init()
 local plainSprite = SpriteRenderer.new(
   { image = "assets/generated/sprites/red.png", frames = 1 })
 local litSprite = SpriteRenderer.new(logoDef)
+local largeSprite = SpriteRenderer.new(largeDef)
+check(plainSprite.frameWidth == 16 and plainSprite.frameHeight == 16
+      and plainSprite.anchorX == 8 and plainSprite.anchorY == 16,
+      "legacy sprite definitions keep the vanilla frame geometry")
+local frameGeometry = largeSprite:getFrameGeometry(5)
+check(frameGeometry.frame == 5 and frameGeometry.x == 0
+      and frameGeometry.y == 120 and frameGeometry.width == 32
+      and frameGeometry.height == 24 and frameGeometry.anchorX == 16
+      and frameGeometry.anchorY == 24,
+      "frame geometry exposes a larger sheet rectangle and anchor")
+local poseGeometry = largeSprite:getPoseGeometry("right", 1, true)
+check(poseGeometry.frame == 5 and poseGeometry.mirror == true
+      and poseGeometry.quad == largeSprite.frames[5],
+      "pose geometry follows walker frame selection and right mirroring")
+local originX, originY = largeSprite:getScreenOrigin(32, 32, 0, 0)
+check(originX == 24 and originY == 20,
+      "a custom anchor keeps a larger sprite grounded at its cell")
 
 Renderer:beginFrame(true)
 check(#PaletteFX.trueColorRects("ui") == 0
@@ -470,6 +522,27 @@ worldDrawn = canvasDraws(Renderer.worldCanvas)
 check(#worldDrawn == 2, "the reported zone joins the world list endFrame blits")
 check(worldDrawn[1].shader and worldDrawn[2].shader == false,
       "the colorized pass runs first, then the sprite's rect with no shader")
+
+-- Larger true-color frames claim their actual extent, and fishing's top-half
+-- path reserves only the bottom 8-pixel tile for the overlay.
+Renderer:beginFrame(true)
+Renderer:beginWorldPass()
+largeSprite:draw(32, 32, 0, 0, "down", 0, false)
+local largeRects = PaletteFX.trueColorRects("world")
+check(#largeRects == 1 and largeRects[1].x == 24 and largeRects[1].y == 20
+      and largeRects[1].w == 32 and largeRects[1].h == 24,
+      "a larger trueColor sprite reports its full anchored extent")
+Renderer:endWorldPass()
+
+Renderer:beginFrame(true)
+Renderer:beginWorldPass()
+largeSprite:draw(32, 32, 0, 0, "down", 0, false, true)
+local topRects = PaletteFX.trueColorRects("world")
+check(#topRects == 1 and topRects[1].h == 16
+      and largeSprite.halfFrames[0].y == 0
+      and largeSprite.halfFrames[0].h == 16,
+      "the fishing overlay keeps a larger frame's bottom tile clear")
+Renderer:endWorldPass()
 
 -- the same path on the UI canvas, which is where a full-color title logo
 -- or menu portrait lands
@@ -612,16 +685,22 @@ check(PaletteFX.usesGbcPack(), "redpp mode selects the gbc pack")
 local gbc = PaletteFX.gbcPack()
 check(gbc ~= nil and gbc.palettes.BULBASAUR ~= nil,
       "data/palettes_gbc.lua ships per-species pals")
-check(PaletteFX.monPalName({ palettes = nil }, "BULBASAUR") == "BULBASAUR",
+-- the pack's species map follows pokered-gbc's Gen 1 (non-GEN_2_GRAPHICS)
+-- palette assignments -- data/pokemon/palettes.asm ELSE branch -- so
+-- Bulbasaur wears GREENMON, not a per-species PAL_BULBASAUR authored for
+-- Gen 2 sprite art (see the pokemon table comment in data/palettes_gbc.lua)
+check(PaletteFX.monPalName({ palettes = nil }, "BULBASAUR") == "GREENMON",
       "RED++ monPalName resolves to the species palette id")
-check(PaletteFX.monPal({ palettes = nil }, "BULBASAUR") == gbc.palettes.BULBASAUR,
+check(PaletteFX.monPal({ palettes = nil }, "BULBASAUR") == gbc.palettes.GREENMON,
       "RED++ monPal reads the species colors without a ROM pack")
 check(PaletteFX.pal({ palettes = nil }, "ROUTE") == gbc.palettes.ROUTE,
       "RED++ still has ROUTE (aliased from VIRIDIAN)")
 check(PaletteFX.effectiveColors(gbc.palettes.MEWMON) == gbc.palettes.MEWMON,
       "RED++ passes zone colors through like GBC")
 -- issue #84: CELADON_DINER shares LOBBY block 29 (table top) with
--- CELADON_MART_ROOF (#52); both need the $37->$5a BROWN alias
+-- CELADON_MART_ROOF (#52); both need the $37->$5a BROWN alias.
+-- Issue #689: blocks 45 and 49 also form tables with tile $37 on their
+-- flat surfaces; CELADON_DINER uses all three.
 do
   local aliases = PaletteFX.TILE_ALIASES
   local roof = aliases and aliases.CELADON_MART_ROOF
@@ -630,11 +709,20 @@ do
         "CELADON_MART_ROOF and CELADON_DINER both have TILE_ALIASES")
   check(diner == roof,
         "diner reuses the same lobby table-top alias as the mart roof")
+  check(#diner == 3, "three LOBBY table blocks have the tile alias")
   local al = diner and diner[1]
   check(al and al.block == 29 and al.tile == 0x37 and al.alias == 0x5a
         and al.group == 5 and al.cells[5] and al.cells[6]
         and al.cells[9] and al.cells[10],
         "lobby table-top alias remaps block 29 cells 5/6/9/10")
+  al = diner and diner[2]
+  check(al and al.block == 45 and al.tile == 0x37 and al.alias == 0x5a
+        and al.group == 5 and al.cells[13] and al.cells[14],
+        "lobby table-top alias remaps block 45 cells 13/14")
+  al = diner and diner[3]
+  check(al and al.block == 49 and al.tile == 0x37 and al.alias == 0x5a
+        and al.group == 5 and al.cells[1] and al.cells[2],
+        "lobby table-top alias remaps block 49 cells 1/2")
 end
 -- issue #128: RED++'s gbc pack is Red-derived; Blue must keep ROM LOGO1
 -- (and the Blue-only SLOTS* rows) so the title ribbon is blue, not red
@@ -802,9 +890,9 @@ do
   Renderer:beginWorldPass()
   Renderer:endWorldPass()
   wipe:draw()
-  check(Renderer.battleCascadeProg ~= nil
-        and Renderer.battleCascadeProg > 0
-        and Renderer.battleCascadeProg < 1,
+  check(Renderer.battleWipe ~= nil
+        and Renderer.battleWipe.prog > 0
+        and Renderer.battleWipe.prog < 1,
         "battle wipe publishes mid-progress cascade to the renderer")
   rects = {}
   Renderer:endFrame(nil, fullWorldZones())
@@ -900,7 +988,8 @@ local vanilla = BattleTransition.new({ stack = stack }, nil,
                                      { trainer = true, stronger = true })
 check(vanilla.style == "spiralout",
       "the vanilla 3-bit select is the hook's default (trainer+stronger)")
-check(vanilla.wipeLen == 40, "the selected wipe brings its own length")
+check(vanilla.wipeLen == BattleTransition.STYLES.spiralout.frames,
+      "the selected wipe brings its own length")
 
 local savedRuntime = { events = Runtime.events, hooks = Runtime.hooks,
                        errors = Runtime.errors }
@@ -913,7 +1002,8 @@ hooks:wrap("transition.style", function(nextLink, ctx)
 end, 0, "test")
 local hooked = BattleTransition.new({ stack = stack }, nil, { trainer = true })
 check(hooked.style == "hstripes", "a transition.style hook picks the wipe")
-check(hooked.wipeLen == 24, "the hooked style brings its own length")
+check(hooked.wipeLen == BattleTransition.STYLES.hstripes.frames,
+      "the hooked style brings its own length")
 check(seenCtx.trainer == true and seenCtx.stronger == nil,
       "the hook receives the selection bits as context")
 
@@ -922,6 +1012,33 @@ local fallback = BattleTransition.new({ stack = stack }, nil, {})
 check(fallback.style == "doublecircle",
       "a hook naming an unregistered style falls back to the vanilla bits")
 Runtime.install(Events.new(), Hooks.new(), {})
+
+-- ------- gated final-output ownership
+
+local outputHooks = Hooks.new()
+Runtime.install(Events.new(), outputHooks, {})
+local outputCalls, outputContext = 0, nil
+outputHooks:wrap("render.output", function(nextLink, context)
+  outputCalls, outputContext = outputCalls + 1, context
+  return true
+end, 0, "test")
+outputHooks:wrap("render.output_enabled", function() return false end, 0, "test")
+Renderer:init()
+Renderer.presentCanvas = nil
+Renderer:beginFrame(false)
+Renderer:endFrame(nil, nil)
+check(outputCalls == 0 and Renderer.presentCanvas == nil,
+      "a disabled output hook leaves the direct render path untouched")
+
+outputHooks:wrap("render.output_enabled", function() return true end, 10, "test")
+Renderer:init()
+Renderer.presentCanvas = nil
+Renderer:beginFrame(false)
+Renderer:endFrame(nil, nil)
+check(outputCalls == 1 and outputContext and outputContext.canvas,
+      "an enabled output hook receives the finished frame")
+check(outputContext and outputContext.generation == 1,
+      "the output context identifies the active generation")
 
 -- ------- asset transforms
 

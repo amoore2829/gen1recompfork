@@ -4,9 +4,9 @@ local M = {}
 
 local function text(game) return game.data.text end
 
-local function push(game, s, done)
+local function push(game, s, done, opts)
   local TextBox = require("src.render.TextBox")
-  game.stack:push(TextBox.new(game, s, done))
+  game.stack:push(TextBox.new(game, s, done, opts))
 end
 
 -- fill the extracted text placeholders ({RAM:...}, {PLAYER})
@@ -25,8 +25,8 @@ local function gift(opts)
     local t = text(game)
     local itemName = game.data.items[opts.item].name
     local subs = { ram = itemName, player = game.save.player.name }
-    local function say(label, fallback, cb)
-      push(game, fill(t[label] or fallback, subs), cb)
+    local function say(label, fallback, cb, sopts)
+      push(game, fill(t[label] or fallback, subs), cb, sopts)
     end
     if game.save.flags[opts.flag] then
       say(opts.already or opts.explain, "It's a useful\nitem, isn't it?", done)
@@ -39,17 +39,18 @@ local function gift(opts)
       end
       game.save.flags[opts.flag] = true
       local idef = game.data.items[opts.item]
-      require("src.core.Sound").play(game.data,
-        (idef and idef.keyItem) and "Get_Key_Item" or "Get_Item1")
+      -- the received texts carry sound_get_item_1 / sound_get_key_item, so
+      -- the jingle only fires once that box has typed out
       say(opts.received, "{PLAYER} received\n{RAM:}!", function()
         if opts.explain then
           say(opts.explain, "", done)
         else
           done()
         end
-      end)
+      end, require("src.render.TextBox").soundOpts(game,
+        (idef and idef.keyItem) and "Get_Key_Item" or "Get_Item1"))
     end
-    if opts.pre then say(opts.pre, "", give) else give() end
+    if opts.pre then say(opts.pre, opts.preFallback or "", give) else give() end
   end
 end
 
@@ -118,11 +119,21 @@ M.CINNABAR_LAB_METRONOME_ROOM = {
   },
 }
 
--- TM42 Dream Eater (scripts/ViridianCity.asm, the fisher; no pre text)
+-- TM42 Dream Eater (scripts/ViridianCity.asm, the fisher).  The fisher's
+-- YouCanHaveThisText prints before GiveItem, so this gift needs a pre
+-- text (#775).  Like the SilphCo2F worker (#393) that label carries no
+-- leading underscore, and on Red it sits outside the extractor's symbol
+-- set, so the literal from text/ViridianCity.asm rides along as the
+-- fallback; Yellow resolves the ROM string instead.
 M.VIRIDIAN_CITY = {
   talk = {
     TEXT_VIRIDIANCITY_FISHER = gift({
       flag = "EVENT_GOT_TM42", item = "TM_DREAM_EATER",
+      pre = "ViridianCityFisherYouCanHaveThisText",
+      preFallback = "Yawn!\nI must have dozed\voff in the sun."
+        .. "\fI had this dream\nabout a DROWZEE\veating my dream."
+        .. "\vWhat's this?\vWhere did this TM\vcome from?"
+        .. "\fThis is spooky!\nHere, you can\vhave this TM.",
       received = "_ViridianCityFisherReceivedTM42Text",
       explain = "_ViridianCityFisherTM42ExplanationText",
       noRoom = "_ViridianCityFisherTM42NoRoomText",
@@ -175,6 +186,20 @@ M.ROUTE_18_GATE_2F = {
     TEXT_ROUTE18GATE2F_YOUNGSTER = {
       { "face_player" },
       { "trade", 6, "EVENT_TRADED_SLOWBRO_FOR_LICKITUNG" }, -- MARC
+    },
+    -- Yellow replaces the youngster with a cook trading SPIKE
+    -- (TANGELA -> PARASECT): pokeyellow/scripts/Route18Gate2F.asm
+    -- Route18Gate2FCookText runs TRADE_FOR_SPIKE, index 6 in the Yellow
+    -- TradeMons table that Data:applyVersionedFieldData swaps in.  Red
+    -- maps have no COOK object here and Yellow maps have no YOUNGSTER,
+    -- so each version only ever fires its own row (#651).  Both rows
+    -- share the Red-flavoured done flag on purpose: a .sav tracks
+    -- "trade slot 6 completed" in one wCompletedInGameTradeFlags bit
+    -- either version reads, and the save codec maps that bit to this
+    -- flag name (src/save_convert/GenSave.lua EXTRA_FLAG_BITS).
+    TEXT_ROUTE18GATE2F_COOK = {
+      { "face_player" },
+      { "trade", 6, "EVENT_TRADED_SLOWBRO_FOR_LICKITUNG" }, -- SPIKE (Yellow)
     },
   },
 }
@@ -421,7 +446,7 @@ local function pewterGymEscort(game, ow)
   end
 
   local function afterWalk()
-    if guy then guy.facing = "left" end
+    if guy then guy.stepFrames, guy.facing = nil, "left" end
     Music.playMap(game.data, "PEWTER_CITY")
     push(game, t._PewterCityYoungsterGoTakeOnBrockText
       or "Go take on BROCK\nat the GYM first!", walkHome)
@@ -444,6 +469,11 @@ local function pewterGymEscort(game, ow)
   end
 
   local function beginWalk()
+    -- the escort runs the youngster on the player's own frames per cell
+    -- engine/overworld/movement.asm:737 (DoScriptedNPCMovement)
+    if guy then
+      guy.stepFrames = ow.player.stepFramesCur or ow.player.stepFrames
+    end
     Music.play(game.data, "Music_MuseumGuy")
     if guy and head > 0 then
       local h = 0
@@ -484,12 +514,12 @@ M.PEWTER_CITY = {
 -- Rival ambush: show the hidden rival, walk him up to the player, run
 -- the battle rows, march him back and hide him.  On a loss the walk is
 -- skipped (the blackout rebuilds the map mid-script).
-local function runAmbush(game, ow, rows, playerFacing)
+local function runAmbush(game, ow, rows, playerFacing, musicOpts)
   if ow.runner:isRunning() then return false end
   ow.player.facing = playerFacing
   -- the rival encounter sting (MUSIC_MEET_RIVAL); the battle music
   -- takes over and the map theme returns after the victory jingle
-  require("src.core.Music").play(game.data, "Music_MeetRival")
+  require("src.core.Music").play(game.data, "Music_MeetRival", nil, musicOpts)
   ow.runner:run(rows)
   return true
 end
@@ -543,12 +573,15 @@ local function route22Scene(n, objIndex, objName, oppClass, baseParty, beatFlag,
     { "face_object", objIndex, rivalFacing },                  -- 3
     { "show_text", "_Route22RivalBeforeBattleText" .. n },     -- 4
     { "rival_battle", oppClass, baseParty },                   -- 5
-    { "jump_if_false", 11 },                                   -- 6
+    { "jump_if_false", 13 },                                   -- 6
     { "set_flag", beatFlag },                                  -- 7
     { "show_text", "_Route22Rival" .. n .. "DefeatedText" },   -- 8
     { "show_text", "_Route22RivalAfterBattleText" .. n },      -- 9
-    { "walk_npc", objIndex, route22ExitDirs(n, py) },          -- 10
-    { "hide_object", "ROUTE_22", objName },                    -- 11
+    { "play_music", "Music_MeetRival", { start = "rival",
+      tempo = n == 2 and 100 or nil } },                     -- 10
+    { "walk_npc", objIndex, route22ExitDirs(n, py) },          -- 11
+    { "play_default_music" },                    -- scripts/Route22.asm:230
+    { "hide_object", "ROUTE_22", objName },                    -- 13
   }
 end
 
@@ -570,7 +603,8 @@ M.ROUTE_22 = {
     if f.EVENT_BEAT_GIOVANNI and not f.EVENT_BEAT_ROUTE22_RIVAL_2ND_BATTLE then
       return runAmbush(game, ow,
         route22Scene(2, 2, "ROUTE22_RIVAL2", "OPP_RIVAL2", 10,
-                     "EVENT_BEAT_ROUTE22_RIVAL_2ND_BATTLE", y), playerFacing)
+                     "EVENT_BEAT_ROUTE22_RIVAL_2ND_BATTLE", y), playerFacing,
+        { tempo = 100 })
     end
     return false
   end,
@@ -594,12 +628,14 @@ local function ceruleanRivalScene(px, py)
     { "face_object", 1, "down" },                              -- 3
     { "show_text", "_CeruleanCityRivalPreBattleText" },        -- 4
     { "rival_battle", "OPP_RIVAL1", 7 },                       -- 5
-    { "jump_if_false", 11 },                                   -- 6
+    { "jump_if_false", 13 },                                   -- 6
     { "set_flag", "EVENT_BEAT_CERULEAN_RIVAL" },               -- 7
     { "show_text", "_CeruleanCityRivalDefeatedText" },         -- 8
     { "show_text", "_CeruleanCityRivalIWentToBillsText" },     -- 9
-    { "walk_npc", 1, ceruleanRivalExitDirs(px) },              -- 10
-    { "hide_object", "CERULEAN_CITY", "CERULEANCITY_RIVAL" },  -- 11
+    { "play_music", "Music_MeetRival", { start = "rival" } }, -- 10
+    { "walk_npc", 1, ceruleanRivalExitDirs(px) },              -- 11
+    { "play_default_music" },                -- scripts/CeruleanCity.asm:230
+    { "hide_object", "CERULEAN_CITY", "CERULEANCITY_RIVAL" },  -- 13
   }
 end
 
@@ -706,7 +742,7 @@ local JIGGLYPUFF_SILENCE, JIGGLYPUFF_STEP, JIGGLYPUFF_TAIL = 32, 24, 48
 -- Built as a TextBox `auto` table: auto.sound fires the frame the last
 -- page has typed out (PrintText returning), and auto.tick then runs once
 -- per frame while the gate it returns still reads as playing.
-local function jigglypuffDance(game, npc)
+local function jigglypuffDance(game, npc, ow)
   local Music = require("src.core.Music")
   -- .findMatchingFacingDirectionLoop: the rotation picks up at the entry
   -- matching the sprite's current facing (showMapText has just turned it
@@ -752,7 +788,13 @@ local function jigglypuffDance(game, npc)
         if npc then npc.facing = JIGGLYPUFF_SPIN[step] end
         return
       end
-      if frames >= JIGGLYPUFF_TAIL then phase = "done" end
+      if frames >= JIGGLYPUFF_TAIL then
+        phase = "done"
+        if require("src.core.GameVersion").isYellow()
+            and require("src.world.PikachuFollower").starterInParty(game.save) then
+          ow.pikachuPewterSleepScene = true
+        end
+      end
     end,
   }
 end
@@ -765,7 +807,7 @@ M.PEWTER_POKECENTER = {
       local TextBox = require("src.render.TextBox")
       game.stack:push(TextBox.new(game,
         text(game)._PewterPokecenterJigglypuffText or "JIGGLYPUFF: Puu\npupuu!",
-        done, { auto = jigglypuffDance(game, npc) }))
+        done, { auto = jigglypuffDance(game, npc, ow) }))
     end,
   },
 }
@@ -840,12 +882,14 @@ M.SILPH_CO_7F = {
       { "face_object", 9, "up" },                              -- 4
       { "show_text", "_SilphCo7FRivalWaitedHereText" },        -- 5
       { "rival_battle", "OPP_RIVAL2", 7 },                     -- 6
-      { "jump_if_false", 12 },                                 -- 7
+      { "jump_if_false", 14 },                                 -- 7
       { "set_flag", "EVENT_BEAT_SILPH_CO_RIVAL" },             -- 8
       { "show_text", "_SilphCo7FRivalDefeatedText" },          -- 9
       { "show_text", "_SilphCo7FRivalGoodLuckToYouText" },     -- 10
-      { "move_npc_to", 9, 5, y + 1 },                          -- 11
-      { "hide_object", "SILPH_CO_7F", "SILPHCO7F_RIVAL" },     -- 12
+      { "play_music", "Music_MeetRival", { start = "rival" } }, -- 11
+      { "move_npc_to", 9, 5, y + 1 },                          -- 12
+      { "play_default_music" },                -- scripts/SilphCo7F.asm:261
+      { "hide_object", "SILPH_CO_7F", "SILPHCO7F_RIVAL" },     -- 14
     }, "down")
   end,
 }
@@ -875,12 +919,14 @@ M.SS_ANNE_2F = {
       { "face_object", 2, onLeft and "down" or "right" },      -- 3
       { "show_text", "_SSAnne2FRivalText" },                   -- 4
       { "rival_battle", "OPP_RIVAL2", 1 },                     -- 5
-      { "jump_if_false", 11 },                                 -- 6
+      { "jump_if_false", 13 },                                 -- 6
       { "set_flag", "EVENT_BEAT_SS_ANNE_RIVAL" },              -- 7
       { "show_text", "_SSAnne2FRivalDefeatedText" },           -- 8
       { "show_text", "_SSAnne2FRivalCutMasterText" },          -- 9
-      { "walk_npc", 2, ssAnne2FRivalExitDirs(onLeft) },        -- 10
-      { "hide_object", "SS_ANNE_2F", "SSANNE2F_RIVAL" },       -- 11
+      { "play_music", "Music_MeetRival", { start = "rival" } }, -- 10
+      { "walk_npc", 2, ssAnne2FRivalExitDirs(onLeft) },        -- 11
+      { "play_default_music" },                 -- scripts/SSAnne2F.asm:175
+      { "hide_object", "SS_ANNE_2F", "SSANNE2F_RIVAL" },       -- 13
     }, onLeft and "up" or "left")
   end,
 }

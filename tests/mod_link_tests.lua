@@ -21,6 +21,7 @@ local Net = require("src.link.Net")
 local Pokemon = require("src.pokemon.Pokemon")
 local Protocol = require("src.link.Protocol")
 local Runtime = require("src.mods.Runtime")
+local Session = require("src.link.Session")
 
 local S = require("tests.harness").suite("mod link")
 local check, eq = S.check, S.eq
@@ -378,6 +379,25 @@ local nextEngine = Handshake.hello(fakeGame(vanilla, "BLUE"), nil)
 nextEngine.engineVersion = "2.0.0"
 eq(Handshake.checkCompat(helloA, nextEngine), "refused", "engine major mismatch refuses")
 
+-- same major, different release: the fingerprint can't see engine code,
+-- and battle logic changes between releases, so lockstep would desync a
+-- few turns in (#758) -- battle is refused up front, trade still works
+local skewed = Handshake.hello(fakeGame(vanilla, "BLUE"), nil)
+skewed.engineVersion = (tostring(helloA.engineVersion):match("^(%d+)") or "0") .. ".999.0"
+local skewVerdict, skewReason = Handshake.checkCompat(helloA, wire(skewed))
+eq(skewVerdict, "engine_skew", "same-major release skew is its own verdict")
+eq(skewReason, "engine_release_mismatch", "and says why")
+check(not Handshake.battleAllowed("engine_skew"), "release skew refuses lockstep")
+check(Handshake.tradeAllowed("engine_skew"), "release skew still trades")
+check(Handshake.strict("engine_skew"), "release skew negotiates strictly")
+local skewLines = Handshake.describe(helloA, wire(skewed), "engine_skew", "battle")
+local skewJoined = table.concat(skewLines, " ")
+check(skewJoined:find("version", 1, true) ~= nil, "skew notice mentions versions")
+check(skewJoined:find("999", 1, true) ~= nil, "skew notice names the peer release")
+for _, line in ipairs(skewLines) do
+  check(#line <= 20, "skew line fits the screen: " .. line)
+end
+
 local lines = Handshake.describe(helloA, wire(helloMod), "subset", "battle")
 check(#lines > 0, "the incompatibility screen has something to say")
 local joined = table.concat(lines, " ")
@@ -510,11 +530,19 @@ local function linkGame(name, species, data)
   return { data = data or Data, save = save, stack = stack, input = mkInput() }
 end
 
+-- LinkState talks to a Session, not to a raw transport (src/link/LinkState.lua
+-- :75 wraps every backend the same way), so a loopback end has to be wrapped
+-- here too or :update reaches for a getStatus the transport does not have.
+local function linkSession(transport, role)
+  return Session.new(transport, { role = role, kind = "link" })
+end
+
 -- two paired states, host already listening and guest already dialling
 local function pairStates(gameA, gameB)
   local netA, netB = Net.loopbackPair()
   local host, guest = LinkState.new(gameA), LinkState.new(gameB)
-  host.net, guest.net = netA, netB
+  host.net = linkSession(netA, "host")
+  guest.net = linkSession(netB, "guest")
   host.stage, guest.stage = "hosting", "joining"
   gameA.stack:push(host)
   gameB.stack:push(guest)
@@ -554,7 +582,7 @@ check(host.trade.strict, "a v2 verdict unpacks strictly")
 local gameOld = linkGame("RED", "PIDGEY")
 local oldNet, peerNet = Net.loopbackPair()
 local v1guest = LinkState.new(gameOld)
-v1guest.net = oldNet
+v1guest.net = linkSession(oldNet, "guest")
 v1guest.stage = "joining"
 gameOld.stack:push(v1guest)
 v1guest:update(1 / 60)
@@ -572,7 +600,7 @@ check(not v1guest.trade.strict, "the v1 path keeps the old unpack rules")
 local gameLone = linkGame("RED", "PIDGEY")
 local loneNet, silentNet = Net.loopbackPair()
 local v1host = LinkState.new(gameLone)
-v1host.net = loneNet
+v1host.net = linkSession(loneNet, "host")
 v1host.stage = "hosting"
 gameLone.stack:push(v1host)
 v1host:update(1 / 60)

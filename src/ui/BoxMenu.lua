@@ -67,6 +67,7 @@ local function withdraw(game)
   game.stack:push(ListMenu.new(game,
     Strings("BOX %d (WITHDRAW)", game.save.currentBox), items, {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
+    kind = "pc_box_withdraw",
     onChoose = function(item, list)
       local mon = box[item.value]
       if not mon then return end
@@ -114,9 +115,17 @@ local function deposit(game)
   end
   game.stack:push(ListMenu.new(game, "PARTY (DEPOSIT)", items, {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
+    kind = "pc_box_deposit",
     onChoose = function(item, list)
       local mon = game.save.party[item.value]
       if not mon then return end
+      local Follower = require("src.world.PikachuFollower")
+      if Follower.isFollowingDisabled(game.overworld)
+          and Follower.isStarterPikachu(game.save, mon) then
+        game.stack:push(TextBox.new(game, t._SleepingPikachuText2
+          or Strings("There isn't any\nresponse...")))
+        return
+      end
       monSubmenu(game, "DEPOSIT", mon, function()
         if #game.save.party <= 1 then
           list.footer = Strings("You need at least\none POKéMON!")
@@ -160,10 +169,21 @@ local function release(game)
   game.stack:push(ListMenu.new(game,
     Strings("BOX %d (RELEASE)", game.save.currentBox), items, {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
+    kind = "pc_box_release",
     onChoose = function(_, list)
       local mon = box[list.index]
       if not mon then return end
       local name = monName(game, mon)
+      if require("src.core.GameVersion").isYellow()
+         and mon.species == "PIKACHU"
+         and mon.otId == game.save.player.id
+         and mon.ot == game.save.player.name then
+        require("src.core.Sound").playCry(game.data, mon.species)
+        game.stack:push(TextBox.new(game,
+          (t._PikachuUnhappyText or Strings("%s looks\nunhappy about it!", name))
+            :gsub("{RAM:wNameBuffer}", name)))
+        return
+      end
       game.stack:push(TextBox.new(game,
         Strings("Once released,\n%s is\ngone forever. OK?", name), nil, {
         defaultNo = true, noSound = true,
@@ -193,6 +213,7 @@ local function changeBox(game)
   end
   game.stack:push(ListMenu.new(game, "CHANGE BOX", items, {
     noSound = true, -- PCMainMenu holds BIT_NO_MENU_BUTTON_SOUND (#570)
+    kind = "pc_box_change",
     onChoose = function(item, list)
       -- the original asks BEFORE switching ("When you change a #MON
       -- BOX, data will be saved. OK?"); declining aborts the change
@@ -203,6 +224,8 @@ local function changeBox(game)
           if not yes then return end
           game.save.currentBox = item.value
           if game.writeSave then game:writeSave() end
+          -- ChangeBox (engine/menus/save.asm) rings SFX_SAVE after SaveGameData (#1044)
+          require("src.core.Sound").play(game.data, "Save")
           list:close()
         end,
       }))

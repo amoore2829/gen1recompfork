@@ -20,9 +20,9 @@
 #   - macOS + Xcode (xcodebuild)
 #   - mobile/ios/love-src/ (see --fetch / mobile/ios/README.md)
 #
-# Output: dist/ios/<Config>-<sdk>/gen1recomp.app (convenience copy)
-#         dist/ios/gen1recomp.ipa                 (device builds only)
-#         mobile/ios/build/Build/Products/<Config>-<sdk>/gen1recomp.app
+# Output: dist/ios/<Config>-<sdk>/gen1recomp++.app (convenience copy)
+#         dist/ios/gen1recomp++.ipa                 (device builds only)
+#         mobile/ios/build/Build/Products/<Config>-<sdk>/gen1recomp++.app
 
 set -euo pipefail
 
@@ -39,8 +39,9 @@ RESOURCES_DIR="$XCODE_DIR/ios/resources"
 LOVE_FILE="$RESOURCES_DIR/game.love"
 LIBS_DIR="$XCODE_DIR/ios/libraries"
 
-APP_NAME="gen1recomp"
-DISPLAY_NAME="gen1recomp"
+APP_NAME="gen1recomp++"
+DISPLAY_NAME="gen1recomp++"
+PRODUCT_NAME="gen1recomp++"
 # Bundle ID resolution, most specific wins:
 #   1. GEN1_BUNDLE_ID env var
 #   2. mobile/ios/bundle_id.local (one line, gitignored — pins YOUR install
@@ -50,7 +51,7 @@ DISPLAY_NAME="gen1recomp"
 #      capabilities like HealthKit are involved), so a per-team default
 #      lets anyone build without colliding with someone else's app
 #   4. simulator: the project default (no App ID registration involved)
-BUNDLE_ID="${GEN1_BUNDLE_ID:-com.theboisclub.gen1recomp}"
+BUNDLE_ID="${GEN1_BUNDLE_ID:-}"
 if [ -z "$BUNDLE_ID" ] && [ -f "$IOS_DIR/bundle_id.local" ]; then
   BUNDLE_ID="$(tr -d '[:space:]' < "$IOS_DIR/bundle_id.local")"
 fi
@@ -138,11 +139,7 @@ if $DEVICE && [ -z "${DEVELOPMENT_TEAM:-}" ]; then
   fi
 fi
 if [ -z "$BUNDLE_ID" ]; then
-  if $DEVICE; then
-    BUNDLE_ID="com.gen1recomp.t$(printf '%s' "$DEVELOPMENT_TEAM" | tr '[:upper:]' '[:lower:]')"
-  else
-    BUNDLE_ID="com.theboisclub.pokemonred"
-  fi
+  BUNDLE_ID="com.theboisclub.gen1recompplusplus"
 fi
 
 # --------------------------------------------------------------- host checks
@@ -217,14 +214,35 @@ apply_ios_branding() {
   cp "$OVERLAY_PLIST" "$dest"
 }
 
+verify_documents_overlay() {
+  local sharing in_place
+  sharing="$(/usr/libexec/PlistBuddy -c 'Print :UIFileSharingEnabled' "$OVERLAY_PLIST" 2>/dev/null || true)"
+  in_place="$(/usr/libexec/PlistBuddy -c 'Print :LSSupportsOpeningDocumentsInPlace' "$OVERLAY_PLIST" 2>/dev/null || true)"
+  [ "$sharing" = "true" ] && [ "$in_place" = "true" ] \
+    || fail "iOS plist overlay must enable UIFileSharingEnabled and LSSupportsOpeningDocumentsInPlace"
+}
+
 apply_ios_icon() {
   local source="$ROOT/assets/logo/logo.png"
   local target="$XCODE_DIR/Images.xcassets/iOS AppIcon.appiconset"
   [ -f "$source" ] || fail "missing iOS icon source: $source"
   [ -d "$target" ] || fail "missing iOS app icon set: $target"
+  local icon="$BUILD_DIR/gen1recomp-ios-icon.png"
+  mkdir -p "$BUILD_DIR"
+  if command -v magick >/dev/null 2>&1; then
+    magick -size 1024x1024 xc:black \
+      \( "$source" -resize 900x900 \) -gravity center -composite \
+      -alpha off "$icon" || fail "could not create iOS app icon: $source"
+  else
+    local scaled="$BUILD_DIR/gen1recomp-logo.png"
+    sips -Z 900 "$source" --out "$scaled" >/dev/null \
+      || fail "could not resize iOS app icon source: $source"
+    sips -p 1024 1024 --padColor 000000 "$scaled" --out "$icon" >/dev/null \
+      || fail "could not center iOS app icon source: $source"
+  fi
   local entry name size
   while IFS=: read -r name size; do
-    sips -z "$size" "$size" "$source" --out "$target/$name" >/dev/null
+    sips -z "$size" "$size" "$icon" --out "$target/$name" >/dev/null
   done <<'EOF'
 icon-1024pt@1x.png:1024
 icon-29pt@1x.png:29
@@ -315,6 +333,8 @@ pack_game_love() {
   # it reappears every launch.  Mods install as .zips at runtime instead
   # (launcher -> MODS -> Import mod .zip), the same lifecycle as every
   # other platform.
+  # The launcher UI kit lives at src/ui/kit (inside src/, packed wholesale);
+  # the vendored libs/flexlove tree it replaced is gone.
   # shellcheck disable=SC2086  # MANIFESTS is a deliberate word list
   (cd "$ROOT" && zip -q -9 -r "$LOVE_FILE" \
     main.lua conf.lua src data assets tools/save-editor \
@@ -333,33 +353,27 @@ pack_game_love() {
   # in 0.1.45 through 0.1.47: decodeManifest (src/import/RomImporter.lua) errors
   # outright when a version's manifest is absent, so Import ROM on Yellow died
   # in the built app while dev, which reads the source tree, stayed green.
+  # src/ui/kit/Kit.lua is on the list for the same reason: the launcher's UI
+  # toolkit once lived outside src/ (libs/flexlove) and shipped missing from
+  # the mobile packagers, so the launcher threw before drawing its first
+  # frame.  The kit is inside src/ now; the gate stays to catch a repeat.
   archive_entries="$(unzip -Z1 "$LOVE_FILE")"
   # shellcheck disable=SC2086  # MANIFESTS is a deliberate word list
   for required in src/update/Boot.lua tools/save-editor/App.lua \
                   tools/save-editor/Kit.lua tools/save-editor/panels/Party.lua \
+                  src/ui/kit/Kit.lua \
                   $MANIFESTS; do
     printf '%s\n' "$archive_entries" | grep -qx "$required" \
       || fail "game.love is missing $required"
   done
   say "game.love: $(du -h "$LOVE_FILE" | cut -f1) -> $LOVE_FILE"
 
-  # This script packs its own game.love (it does not reuse build.sh's), so it
-  # stamps the release version the same way build.sh and build_android.sh do:
-  # patch a copy of Version.lua (engine set to $VERSION) under a throwaway
-  # staging dir and replace the entry inside the archive in place -- never the
-  # source tree. Stamping the Info.plist alone is not enough: the mod loader
-  # reads Version.engine out of game.love (src/mods/Loader.lua game_version
-  # gate), so an unstamped archive reports "0.0.0-dev" and every mod with a
-  # version floor is rejected on iOS while it loads on desktop (#613).
-  # VERSION is already validated as X.Y.Z above; when it is empty the packaged
-  # game keeps the "0.0.0-dev" default so a dev build cannot pass for a
-  # release. The stamp is read back out and the build fails if it did not take.
   if printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
     say "stamping engine version $VERSION into game.love"
     local stamp_dir
     stamp_dir="$(mktemp -d)"
     mkdir -p "$stamp_dir/src/core"
-    sed -E "s/(engine[[:space:]]*=[[:space:]]*\")[^\"]*(\")/\1$VERSION\2/" \
+    sed -E "s/(engine[[:space:]]*=[[:space:]]*\")([^\"]*)(\")/\1$VERSION\3/" \
       "$ROOT/src/core/Version.lua" > "$stamp_dir/src/core/Version.lua"
     (cd "$stamp_dir" && zip -q "$LOVE_FILE" src/core/Version.lua)
     local version_re
@@ -464,6 +478,86 @@ print("patched project.pbxproj")
 PY
 }
 
+suppress_love_dependency_warnings() {
+  local liblove_pbx="$XCODE_DIR/liblove.xcodeproj/project.pbxproj"
+  local love_pbx="$XCODE_DIR/love.xcodeproj/project.pbxproj"
+  [ -f "$liblove_pbx" ] || fail "missing $liblove_pbx"
+  [ -f "$love_pbx" ] || fail "missing $love_pbx"
+
+  python3 - "$liblove_pbx" "$love_pbx" <<'PY'
+import pathlib
+import sys
+
+def patch_configs(path, config_ids, settings):
+    text = path.read_text()
+    for config_id in config_ids:
+        marker = f"\t\t{config_id}"
+        start = text.find(marker)
+        if start < 0:
+            raise SystemExit(f"missing configuration {config_id}")
+        settings_start = text.find("\t\t\tbuildSettings = {\n", start)
+        block_end = text.find("\n\t\t};", settings_start)
+        if settings_start < 0 or block_end < 0:
+            raise SystemExit(f"invalid configuration {config_id}")
+        block = text[settings_start:block_end]
+        lines = block.splitlines(keepends=True)
+        for setting in settings:
+            key = setting.split(" = ", 1)[0].strip()
+            prefix = f"{key} ="
+            replaced = False
+            normalized = []
+            for line in lines:
+                if line.startswith(f"\t\t\t\t{prefix}"):
+                    if not replaced:
+                        normalized.append(setting)
+                        replaced = True
+                else:
+                    normalized.append(line)
+            if not replaced:
+                normalized.insert(1, setting)
+            lines = normalized
+        normalized_block = "".join(lines)
+        if normalized_block != block:
+            text = text[:settings_start] + normalized_block + text[block_end:]
+    path.write_text(text)
+
+patch_configs(
+    pathlib.Path(sys.argv[1]),
+    (
+        "FA0B78EF1A958B90000E1D17",
+        "FA0B78F01A958B90000E1D17",
+        "FA0B78F11A958B90000E1D17",
+    ),
+    (
+        "\t\t\t\tCLANG_WARN_UNINITIALIZED_AUTOS = NO;\n",
+        "\t\t\t\tCLANG_WARN_UNREACHABLE_CODE = NO;\n",
+        "\t\t\t\tCLANG_WARN_UNUSED_PARAMETER = NO;\n",
+        "\t\t\t\tGCC_WARN_CHECK_SWITCH_STATEMENTS = NO;\n",
+        "\t\t\t\tGCC_WARN_SIGN_COMPARE = NO;\n",
+        "\t\t\t\tGCC_WARN_UNINITIALIZED_AUTOS = NO;\n",
+        "\t\t\t\tGCC_WARN_UNUSED_FUNCTION = NO;\n",
+        "\t\t\t\tGCC_WARN_UNUSED_PARAMETER = NO;\n",
+        "\t\t\t\tGCC_WARN_UNUSED_VARIABLE = NO;\n",
+        "\t\t\t\tOTHER_CFLAGS = \"$(inherited) -Wno-sign-compare -Wno-strict-prototypes -Wno-unused-but-set-variable -Wno-unused-function -Wno-unused-parameter -Wno-unused-variable\";\n",
+        "\t\t\t\tOTHER_CPLUSPLUSFLAGS = \"$(inherited) -Wno-deprecated-declarations -Wno-non-c-typedef-for-linkage -Wno-sign-compare -Wno-switch -Wno-unguarded-availability-new -Wno-unused-but-set-variable -Wno-unused-function -Wno-unused-parameter -Wno-unused-private-field -Wno-unused-variable\";\n",
+    ),
+)
+patch_configs(
+    pathlib.Path(sys.argv[2]),
+    (
+        "FA0B7F261A95AAF4000E1D17",
+        "FA0B7F271A95AAF4000E1D17",
+        "FA0B7F281A95AAF4000E1D17",
+    ),
+    (
+        "\t\t\t\tCLANG_WARN_UNDECLARED_SELECTOR = NO;\n",
+        "\t\t\t\tCLANG_WARN_UNUSED_PARAMETER = NO;\n",
+        "\t\t\t\tOTHER_CFLAGS = \"$(inherited) -Wno-undeclared-selector -Wno-unused-parameter\";\n",
+    ),
+)
+PY
+}
+
 # --------------------------------------------------------------- xcodebuild
 # love.system.pickFile and createFile are a native bridge compiled in by
 # mobile/ios/patch_love_src.py, not part of LÖVE.  A build that skipped the
@@ -500,6 +594,25 @@ verify_native_bridge() {
     scripts/build_ios.sh --fetch && scripts/build_ios.sh"
   fi
   say "native bridge present (pickFile, createFile)"
+}
+
+verify_documents_configuration() {
+  local app="$1"
+  local plist="$app/Info.plist"
+  local sharing in_place
+  [ -f "$plist" ] || fail "built iOS app is missing Info.plist: $plist"
+  sharing="$(/usr/libexec/PlistBuddy -c 'Print :UIFileSharingEnabled' "$plist" 2>/dev/null || true)"
+  in_place="$(/usr/libexec/PlistBuddy -c 'Print :LSSupportsOpeningDocumentsInPlace' "$plist" 2>/dev/null || true)"
+  [ "$sharing" = "true" ] && [ "$in_place" = "true" ] \
+    || fail "built iOS app does not expose its Documents folder in $(basename "$app")"
+  say "public Documents exposure present (file sharing + in-place access)"
+}
+
+verify_game_payload() {
+  local app="$1"
+  [ -s "$app/game.love" ] \
+    || fail "built iOS app is missing game.love: $app"
+  say "game.love present ($(du -h "$app/game.love" | cut -f1))"
 }
 
 run_xcodebuild() {
@@ -542,9 +655,12 @@ run_xcodebuild() {
     PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID"
     MARKETING_VERSION="$marketing_version"
     CURRENT_PROJECT_VERSION="$project_version"
+    INFOPLIST_KEY_UIFileSharingEnabled=YES
+    INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace=YES
+    IPHONEOS_DEPLOYMENT_TARGET=15.0
     ONLY_ACTIVE_ARCH=NO
+    DISABLE_MANUAL_TARGET_ORDER_BUILD_WARNING=YES
   )
-
   if ! $DEVICE; then
     # Simulator: ad-hoc signing (no certificate needed). A plain unsigned
     # build would drop the entitlements file, and HealthKit refuses to run
@@ -554,15 +670,15 @@ run_xcodebuild() {
   else
     warn "device build: configure signing in Xcode or set DEVELOPMENT_TEAM / CODE_SIGN_IDENTITY"
     if [ -n "${DEVELOPMENT_TEAM:-}" ]; then
-      # Automatic signing + provisioning updates lets xcodebuild register the
-      # bundle ID / create a development profile from the CLI, so a device
-      # build works without ever opening the project in Xcode.
       args+=(DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM"
              CODE_SIGN_STYLE=Automatic
              -allowProvisioningUpdates)
     fi
     if [ -n "${CODE_SIGN_IDENTITY:-}" ]; then
       args+=(CODE_SIGN_IDENTITY="$CODE_SIGN_IDENTITY")
+    fi
+    if [ "${GEN1_DISABLE_HEALTHKIT:-0}" = "1" ]; then
+      args+=(CODE_SIGN_ENTITLEMENTS=)
     fi
   fi
 
@@ -606,25 +722,37 @@ run_xcodebuild() {
   fi
 
   local products="$BUILD_DIR/Build/Products/${config}-${sdk}"
-  local app="$products/$APP_NAME.app"
-  if [ ! -d "$app" ]; then
-    # PRODUCT_NAME override can still leave love.app on older projects
-    if [ -d "$products/love.app" ]; then
-      app="$products/love.app"
-      warn "built app is love.app (PRODUCT_NAME override not applied); fusing game.love anyway"
-    else
-      warn "xcodebuild finished but no .app under $products"
-      find "$BUILD_DIR/Build/Products" -name '*.app' 2>/dev/null | head -20 || true
-      return 0
+  local app=""
+  local candidate
+  for candidate in "$products/$PRODUCT_NAME.app" "$products/$APP_NAME.app" "$products/love.app"; do
+    if [ -d "$candidate" ]; then
+      app="$candidate"
+      break
     fi
+  done
+  if [ -z "$app" ]; then
+    warn "xcodebuild finished but no .app under $products"
+    find "$BUILD_DIR/Build/Products" -name '*.app' 2>/dev/null | head -20 || true
+    return 0
+  fi
+  if [ "$app" != "$products/$APP_NAME.app" ]; then
+    mv "$app" "$products/$APP_NAME.app"
+    app="$products/$APP_NAME.app"
   fi
 
+  verify_documents_configuration "$app"
+
   # Fuse even if the pbxproj wire-up failed,  LÖVE runs any bundled *.love.
-  if [ ! -f "$app/game.love" ]; then
+  # Byte-compare, never just existence: xcodebuild's incremental Copy Bundle
+  # Resources can leave a previous build's game.love in a surviving .app, and
+  # an existence check shipped that stale payload in the .ipa (today's Lua
+  # fixes present in ios/resources/ but absent from the installed app).
+  if ! cmp -s "$LOVE_FILE" "$app/game.love"; then
     say "fusing game.love into $(basename "$app")"
     cp "$LOVE_FILE" "$app/game.love"
   fi
 
+  verify_game_payload "$app"
   verify_native_bridge "$app"
 
   local dist_dir="$DIST/${config}-${sdk}"
@@ -650,7 +778,7 @@ run_xcodebuild() {
   fi
 }
 
-# Pack Payload/<app>.app into dist/ios/gen1recomp.ipa for release / sideload tools.
+# Pack Payload/<app>.app into dist/ios/gen1recomp++.ipa for release / sideload tools.
 package_ipa() {
   local app="$1"
   local ipa="$DIST/$APP_NAME.ipa"
@@ -696,12 +824,14 @@ install_to_device() {
 
 # --------------------------------------------------------------- main
 apply_ios_branding
+verify_documents_overlay
 apply_ios_icon
 say "applying iOS native bridge patches (picker/Files support)"
 python3 "$IOS_DIR/patch_love_src.py" || fail "patch_love_src.py failed"
 ensure_manifests
 pack_game_love
 ensure_game_love_in_xcode
+suppress_love_dependency_warnings
 
 if $PACKAGE_ONLY; then
   say "package-only: skipping xcodebuild (game.love + plist ready under mobile/ios/love-src/)"

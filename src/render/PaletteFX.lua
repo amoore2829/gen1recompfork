@@ -119,13 +119,9 @@ PaletteFX.GBC_OBJ_BLUE = {
   { 255, 255, 255 }, { 255, 132, 132 }, { 148, 58, 58 }, { 0, 0, 0 },
 }
 
--- The active game's OG boot-ROM background palette: blue for a Blue
--- playthrough, red for Red.  White (index 1) and black (index 4) are
--- identical across Red/Blue, so callers that only touch the endpoints
--- (e.g. BattleState's zone white/black snap) need no version branch there.
--- Yellow is CGB-enhanced (pokeyellow CGBBasePalettes): named zones go through
--- pal() / usesYellowCgb(), and ogBg() falls back to CGBBase PAL_ROUTE for any
--- remaining whole-screen callers -- never Blue's GBC_BG_BLUE.
+-- The active game's OG boot-ROM background palette: blue for Blue, red for Red.
+-- Yellow is CGB-enhanced (pokeyellow CGBBasePalettes), so ogBg() falls back to
+-- CGBBase PAL_ROUTE there, never Blue's GBC_BG_BLUE.
 function PaletteFX.ogBg()
   if GameVersion.isBlue() then return PaletteFX.GBC_BG_BLUE end
   if GameVersion.isYellow() then
@@ -240,6 +236,14 @@ end
 -- and the zone lists are exactly the ones the states returned.
 local trueColorRects = { ui = {}, world = {} }
 local currentPass = nil
+-- Horizontal shift applied to UI-pass marks.  A wide battle keeps its 304px
+-- surface through every classic state it opens, and Game:draw centres each
+-- of those with a translate while centerClassicZones shifts their zone list
+-- by the same amount.  A rect reported from inside that translate has to
+-- move with it, or the unshaded re-blit lands 72 columns off and the pic
+-- keeps the shade remap -- the party STATS screen in a wide battle (#637).
+-- World-pass marks are already in world-canvas space and are never centred.
+local markOffsetX = 0
 
 -- which canvas the renderer is filling.  nil for a pass that composites
 -- with no zone list of its own (tilt's upright billboards carry their own
@@ -252,11 +256,20 @@ function PaletteFX.clearTrueColor()
   for _, rects in pairs(trueColorRects) do
     for i = #rects, 1, -1 do rects[i] = nil end
   end
+  markOffsetX = 0
+end
+
+-- Game:draw declares the translate it is drawing a classic state under, so
+-- that state's marks land where its pixels did.  Cleared with the rects at
+-- the top of every frame (Renderer:beginFrame). #637
+function PaletteFX.setMarkOffset(dx)
+  markOffsetX = tonumber(dx) or 0
 end
 
 function PaletteFX.markTrueColor(x, y, w, h)
   local rects = currentPass and trueColorRects[currentPass]
   if not rects or w <= 0 or h <= 0 then return end
+  if currentPass == "ui" then x = x + markOffsetX end
   rects[#rects + 1] = { colors = false, x = x, y = y, w = w, h = h }
 end
 
@@ -337,23 +350,14 @@ function PaletteFX.usesSpriteObp(mode)
   return mode == "ogred" and not GameVersion.isYellow()
 end
 
--- ------- post-zone sprite redraw (OG RED)
---
--- In OG RED the world canvas still runs through the whole-screen zone
--- shade-remap shader, which would corrupt an OBP-baked sprite's true-color
--- pixels.  (SGB used to come through here too; it no longer bakes an object
--- palette at all, so its characters are colorized by the zone like the ground
--- they stand on and never queue a replay -- see usesSpriteObp, #301.)  So SpriteRenderer draws the baked sprite into the canvas (its
--- pixels come out zone-tinted there) AND records the draw here;
--- Renderer:endFrame replays the list on top of the finished zone pass,
--- scaled into screen space -- the GBC's OBJ-over-BG compositing, one draw
--- late.  Entries carrying `colors` are re-colorized draws (the tall-grass
--- feet overdraw, which must keep hiding sprite feet) issued through the
--- color-0-keyed shade-remap shader.  World pass only; cleared per frame.
+-- ------- post-zone sprite redraw (OG RED): OBP-baked draws recorded here and
+-- replayed by Renderer:endFrame on top of the zone pass (usesSpriteObp, #301)
 local spriteRedraws = {}
+local uiSpriteRedraws = {}
 
 function PaletteFX.clearSpriteRedraws()
   for i = #spriteRedraws, 1, -1 do spriteRedraws[i] = nil end
+  for i = #uiSpriteRedraws, 1, -1 do uiSpriteRedraws[i] = nil end
 end
 
 function PaletteFX.markSpriteRedraw(image, quad, x, y, sx, colors, keyed)
@@ -373,6 +377,16 @@ end
 
 function PaletteFX.spriteRedraws()
   return spriteRedraws
+end
+
+function PaletteFX.markUiSpriteRedraw(image, quad, x, y)
+  if currentPass ~= "ui" then return end
+  uiSpriteRedraws[#uiSpriteRedraws + 1] =
+    { image = image, quad = quad, x = x + markOffsetX, y = y }
+end
+
+function PaletteFX.uiSpriteRedraws()
+  return uiSpriteRedraws
 end
 
 -- Active named-palette table for COLORS: RED++ uses data/palettes_gbc.lua,
@@ -559,15 +573,25 @@ local TILESET_GROUP_EXCEPTIONS = {
 }
 
 -- pokered-gbc's lobby.bst repoints the Celadon LOBBY table's flat top
--- (block 29, cells 5/6/9/10) at a duplicate tile ($5a, BROWN) so the
--- tabletop and the checkerboard floor -- both raw tile $37 -- can take
--- different palettes; the vanilla-derived blockset shares the one tile
--- id, so the RED++ atlas path re-creates the duplicate: the alias slot
--- is baked as a copy of `tile` in `group`'s colors, and the listed
--- 0-based block cells draw the alias instead of the shared tile.
--- Same block appears on CELADON_MART_ROOF (#52) and CELADON_DINER (#84).
+-- at a duplicate tile ($5a, BROWN) so the tabletop and the checkerboard
+-- floor -- both raw tile $37 -- can take different palettes; the
+-- vanilla-derived blockset shares the one tile id, so the RED++ atlas
+-- path re-creates the duplicate: the alias slot is baked as a copy of
+-- `tile` in `group`'s colors, and the listed 0-based block cells draw
+-- the alias instead of the shared tile.
+--
+-- Three LOBBY blocks share tile $37 on their flat surfaces:
+--   block 29: 2x2 table top at cells 5/6/9/10
+--   block 45: 2-tile strip at cells 13/14
+--   block 49: 2-tile strip at cells 1/2
+-- CELADON_DINER uses all three (#84, #85, #86); CELADON_MART_ROOF
+-- uses only block 29 (#52/#53).
 local LOBBY_TABLE_TOP_ALIAS = {
   { block = 29, cells = { [5] = true, [6] = true, [9] = true, [10] = true },
+    tile = 0x37, alias = 0x5a, group = 5 },
+  { block = 45, cells = { [13] = true, [14] = true },
+    tile = 0x37, alias = 0x5a, group = 5 },
+  { block = 49, cells = { [1] = true, [2] = true },
     tile = 0x37, alias = 0x5a, group = 5 },
 }
 PaletteFX.TILE_ALIASES = {
@@ -664,10 +688,12 @@ function PaletteFX.spriteObp(spriteDef, seed)
   return PaletteFX.darkObp(w.spritePalettes[group], group)
 end
 
--- GetHealthBarColor (home/palettes.asm) on the standard 48px bar
-function PaletteFX.barPalName(hp, maxHp)
-  local px = maxHp > 0 and math.floor(hp * 48 / maxHp) or 0
-  if hp > 0 and px < 1 then px = 1 end
+-- GetHealthBarColor (home/palettes.asm) on the standard 48px bar.  It reads
+-- the bar's own length, so a caller mid-drain passes the animated `pixels`
+-- rather than let it be re-derived from hp.
+function PaletteFX.barPalName(hp, maxHp, pixels)
+  local px = pixels or (maxHp > 0 and math.floor(hp * 48 / maxHp) or 0)
+  if not pixels and hp > 0 and px < 1 then px = 1 end
   return px >= 27 and "GREENBAR" or px >= 10 and "YELLOWBAR" or "REDBAR"
 end
 
@@ -835,6 +861,22 @@ end
 function PaletteFX.sendColors(shader, c)
   c = PaletteFX.effectiveColors(c)
   if not c then return end
+  shader:send("c0", { c[1][1] / 255, c[1][2] / 255, c[1][3] / 255 })
+  shader:send("c1", { c[2][1] / 255, c[2][2] / 255, c[2][3] / 255 })
+  shader:send("c2", { c[3][1] / 255, c[3][2] / 255, c[3][3] / 255 })
+  shader:send("c3", { c[4][1] / 255, c[4][2] / 255, c[4][3] / 255 })
+end
+
+-- The same send with NO display-mode substitution and no shade map: the four
+-- colors reach the shader exactly as given.  Only for an INTERMEDIATE pass
+-- whose output is re-thresholded downstream -- the classic battle's zone pass
+-- under a forced-mono mode, where ensureZones' whole-screen zone already
+-- substitutes once at blit time and doing it again here applies the mode
+-- twice (#822).  Everything that draws a final pixel wants sendColors.
+function PaletteFX.sendShades(shader, c)
+  -- headless (no love.graphics) leaves shader() nil; sendColors reaches the
+  -- same no-op through effectiveColors returning nil for an absent palette
+  if not shader or not c then return end
   shader:send("c0", { c[1][1] / 255, c[1][2] / 255, c[1][3] / 255 })
   shader:send("c1", { c[2][1] / 255, c[2][2] / 255, c[2][3] / 255 })
   shader:send("c2", { c[3][1] / 255, c[3][2] / 255, c[3][3] / 255 })

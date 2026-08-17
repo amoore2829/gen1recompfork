@@ -14,6 +14,14 @@ local MODULES = {
 -- Optional for compatibility with developer and stale caches.
 local OPTIONAL = { "audio", "palettes", "icons" }
 
+-- Gold's extractor never writes these Gen 1 tables (RomExtractorGen2 has
+-- maps/text/pokemon/items, not text_pointers / trainer_headers / field).
+-- Desktop can still `require` Red's copies from the source tree, so Gold
+-- Edit appeared to work there; an Android APK has only the per-version
+-- cache, so Data:load used to throw on the first Gold Edit and take the
+-- activity down.  Empty tables are enough for seedDefaults / the editor.
+local GEN2_OPTIONAL = { text_pointers = true, trainer_headers = true, field = true }
+
 -- Vanilla defaults for rules exposed through the constants registry.  A
 -- value has to exist before a mod can patch it; each one matches the
 -- engine's no-mod behavior, so seeding them changes nothing on a vanilla
@@ -84,13 +92,26 @@ function Data:applyVersionedFieldData()
     -- Yellow caches carry the wrong demo species too.  The fixed import
     -- manifest below stamps RATTATA for fresh imports.
     self.field.oldManBattle = { species = "RATTATA", level = 5 }
+    -- The Oak-speech show-off mon is the player's Pikachu in Yellow
+    -- (engine/battle/core.asm BATTLE_TYPE_PIKACHU / the ProfOak demo)
+    -- but caches imported before the manifest carried demoSpecies fell
+    -- back to Red's NIDORINO (#915).  The fixed import manifest below
+    -- stamps PIKACHU for fresh imports; fill it here for stale caches.
+    local oakSpeech = self.field.oakSpeech
+    if type(oakSpeech) == "table" and not oakSpeech.demoSpecies then
+      oakSpeech.demoSpecies = "PIKACHU"
+    end
   end
 end
 
 -- Fills only what the cache is missing, so an importer that learns to
 -- stamp one of these keys silently takes over from the engine.
 function Data:seedDefaults()
-  local constants = self.constants
+  local constants = self.constants or {}
+  self.constants = constants
+  self.field = self.field or {}
+  self.maps = self.maps or {}
+  self.pokemon = self.pokemon or {}
   for key, value in pairs(CONSTANT_DEFAULTS) do
     if constants[key] == nil then constants[key] = copy(value) end
   end
@@ -99,7 +120,11 @@ function Data:seedDefaults()
   if constants.dexSize == nil then
     local highest = 0
     for _, def in pairs(self.pokemon) do
-      if def.dex and def.dex > highest then highest = def.dex end
+      -- Gold's pokemon.lua also carries growthRates / tmhmMoves / generation
+      -- scalars beside species rows.
+      if type(def) == "table" and def.dex and def.dex > highest then
+        highest = def.dex
+      end
     end
     constants.dexSize = highest
   end
@@ -203,23 +228,41 @@ local function loadModule(dir, name)
     if not chunk then return false, err end
     return pcall(chunk)
   end
-  return pcall(require, "data.generated." .. name)
+  local CacheFs = require("src.import.CacheFs")
+  local GameVersion = require("src.core.GameVersion")
+  local path = "data/generated/" .. name .. ".lua"
+  local bytes = CacheFs.readActive(path)
+  if type(bytes) == "string" then
+    local chunk = loadstring(bytes, "@" .. GameVersion.cachePrefix() .. path)
+    if chunk then
+      local ok, res = pcall(chunk)
+      if ok then return true, res end
+    end
+  end
+  local ok, mod = pcall(require, "data.generated." .. name)
+  if ok then return true, mod end
+  return false, nil
 end
 
 function Data:load()
   local dir = os.getenv("POKEPORT_DATA_DIR")
+  local gen2 = require("src.core.GameVersion").generation() == 2
   for _, name in ipairs(MODULES) do
     local ok, mod = loadModule(dir, name)
     if not ok then
-      if dir then
+      if gen2 and GEN2_OPTIONAL[name] then
+        self[name] = {}
+      elseif dir then
         error(("missing data module '%s/%s.lua' (POKEPORT_DATA_DIR).\n(%s)")
               :format(dir, name, mod))
+      else
+        error(("missing generated data module 'data/generated/%s.lua'.\n" ..
+               "Import the ROM again or rebuild developer data.\n(%s)")
+              :format(name, mod))
       end
-      error(("missing generated data module 'data/generated/%s.lua'.\n" ..
-             "Import the ROM again or rebuild developer data.\n(%s)")
-            :format(name, mod))
+    else
+      self[name] = mod
     end
-    self[name] = mod
   end
   for _, name in ipairs(OPTIONAL) do
     local ok, mod = loadModule(dir, name)
@@ -258,11 +301,14 @@ function Data:unloadGenerated()
       if not pristine[key] then self[key] = nil end
     end
   end
+  self._pristineKeys = nil
   for _, name in ipairs(MODULES) do
     package.loaded["data.generated." .. name] = nil
+    self[name] = nil
   end
   for _, name in ipairs(OPTIONAL) do
     package.loaded["data.generated." .. name] = nil
+    self[name] = nil
   end
 end
 

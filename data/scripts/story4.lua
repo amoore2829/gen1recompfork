@@ -8,21 +8,35 @@ local M = {}
 
 local function text(game) return game.data.text end
 
-local function push(game, s, done)
+local function push(game, s, done, opts)
   local TextBox = require("src.render.TextBox")
-  game.stack:push(TextBox.new(game, s, done))
+  game.stack:push(TextBox.new(game, s, done, opts))
 end
 
+-- The question stays on screen under the YES/NO menu.  The dojo prize
+-- balls are the clearest case: FightingDojoHitmonleePokeBallText
+-- (scripts/FightingDojo.asm) is `call PrintText` on a text_end string --
+-- no prompt, so no WaitForTextScrollButtonPress -- immediately followed
+-- by `call YesNoChoice`, and InitYesNoTextBoxParameters
+-- (engine/menus/text_box.asm) puts the menu above the dialogue box
+-- rather than replacing it.  Ride TextBox's opts.choice, the same as
+-- Commands.ask, instead of popping the box with an A press and leaving a
+-- bare ChoiceBox over the overworld (#854).
 local function ask(game, s, cb)
-  local ChoiceBox = require("src.ui.ChoiceBox")
-  push(game, s, function() game.stack:push(ChoiceBox.new(game, cb)) end)
+  local TextBox = require("src.render.TextBox")
+  game.stack:push(TextBox.new(game, s, nil, { choice = cb }))
 end
 
--- fill the extracted text placeholders ({NUM:...}, {RAM:...}, {PLAYER})
+-- fill text placeholders; key on the hram/wram symbol first, since one
+-- string can carry two different NUM slots (#1006)
 local function fill(s, subs)
   s = s:gsub("{PLAYER}", subs.player or "")
-  s = s:gsub("{NUM:[^}]*}", function() return tostring(subs.num or "") end)
-  s = s:gsub("{RAM:[^}]*}", function() return subs.ram or "" end)
+  s = s:gsub("{NUM:([%w_]*)[^}]*}", function(name)
+    return tostring(subs[name] or subs.num or "")
+  end)
+  s = s:gsub("{RAM:([%w_]*)[^}]*}", function(name)
+    return subs[name] or subs.ram or ""
+  end)
   return s
 end
 
@@ -73,9 +87,12 @@ local function oaksAide(threshold, itemId, repeatText)
                 { ram = itemName, player = game.save.player.name }), done)
             end)
         else
+          -- .notEnoughOwnedMons prints owned then requirement, two counts
           push(game, fill(t._OaksAideUhOhText or
             "You have only\ncaught {NUM:}!",
-            { num = owned, ram = itemName }), done)
+            { num = owned, ram = itemName,
+              hOaksAideNumMonsOwned = owned,
+              hOaksAideRequirement = threshold }), done)
         end
       end)
   end
@@ -101,33 +118,36 @@ M.ROUTE_15_GATE_2F = {
 
 M.MT_MOON_POKECENTER = {
   talk = {
-    TEXT_MTMOONPOKECENTER_MAGIKARP_SALESMAN = function(game, ow, npc, done)
-      local t = text(game)
-      if game.save.flags.EVENT_BOUGHT_MAGIKARP then
-        push(game, t._MtMoonPokecenterMagikarpSalesmanNoRefundsText
-          or "Well, I don't\ngive refunds!", done)
-        return
-      end
-      ask(game, t._MtMoonPokecenterMagikarpSalesmanOfferText
-        or "MAGIKARP! A\nsteal at ¥500!\nWant one?", function(yes)
-        if not yes then
-          push(game, t._MtMoonPokecenterMagikarpSalesmanNoText
-            or "No? I'm only\nselling today!", done)
-          return
-        end
-        if game.save.money < 500 then
-          push(game, t._MtMoonPokecenterMagikarpSalesmanNoMoneyText
-            or "You'll need more\nmoney than that!", done)
-          return
-        end
-        game.save.money = game.save.money - 500
-        game.save.flags.EVENT_BOUGHT_MAGIKARP = true
-        local Commands = require("src.script.Commands")
-        Commands.give_pokemon({ save = game.save, game = game, overworld = ow },
-                              "MAGIKARP", 5)
-        push(game, ("%s got a\nMAGIKARP!"):format(game.save.player.name), done)
-      end)
-    end,
+    -- command rows, not a Lua handler: give_pokemon needs a runner to AskName (#1407)
+    TEXT_MTMOONPOKECENTER_MAGIKARP_SALESMAN = {
+      { "check_flag", "EVENT_BOUGHT_MAGIKARP" },
+      { "jump_if_true", "no_refunds" },
+      -- MONEY_BOX goes up between the offer and YesNoChoice -- MtMoonPokecenter.asm:31
+      { "text_opts", { money = true } },
+      { "ask", "_MtMoonPokecenterMagikarpSalesmanIGotADealText" },
+      { "jump_if_false", "declined" },
+      { "check_money", 500 },
+      { "jump_if_false", "no_money" },
+      { "give_pokemon", "MAGIKARP", 5 },
+      -- MtMoonPokecenter.asm:49 `jr nc, .done`: a refused gift is never charged
+      { "jump_if_false", "box_full" },
+      { "take_money", 500 },
+      { "set_flag", "EVENT_BOUGHT_MAGIKARP" },
+      { "text_sound", "Get_Item1" },
+      { "show_text", "_GotMonText", { RAM = "MAGIKARP" } },
+      { "jump", "end" },
+      { "label", "box_full" },
+      { "show_text", "_BoxIsFullText" },
+      { "jump", "end" },
+      { "label", "declined" },
+      { "show_text", "_MtMoonPokecenterMagikarpSalesmanNoText" },
+      { "jump", "end" },
+      { "label", "no_money" },
+      { "show_text", "_MtMoonPokecenterMagikarpSalesmanNoMoneyText" },
+      { "jump", "end" },
+      { "label", "no_refunds" },
+      { "show_text", "_MtMoonPokecenterMagikarpSalesmanNoRefundsText" },
+    },
   },
 }
 
@@ -155,19 +175,26 @@ local function dojoBall(species, ownBall, otherBall, askKey)
       push(game, "You'll have to\nbeat the master\nfirst!", done)
       return
     end
-    ask(game, t[askKey] or ("You want\n" .. species .. "?"), function(yes)
-      if not yes then done() return end
-      flags["EVENT_GOT_" .. species] = true
-      flags.EVENT_DEFEATED_FIGHTING_DOJO = true
-      local Commands = require("src.script.Commands")
-      local ctx = { save = game.save, game = game, overworld = ow }
-      Commands.give_pokemon(ctx, species, 30)
-      -- Hide ONLY the chosen ball; the other stays (FightingDojo.asm hides
-      -- just the picked object's index) and routes to the greedy line above
-      -- when talked to (#197).
-      Commands.hide_object(ctx, "FIGHTING_DOJO", ownBall)
-      push(game, ("%s got\n%s!"):format(game.save.player.name, species), done)
-    end)
+    -- Examining a ball shows that species' POKéDEX entry first
+    -- (DisplayPokedex in FightingDojo.asm, which also marks it seen),
+    -- then the yes/no take-it prompt (#853).
+    local Commands = require("src.script.Commands")
+    local ctx = { save = game.save, game = game, overworld = ow }
+    Commands.mark_seen(ctx, species)
+    local DexEntryMenu = require("src.ui.DexEntryMenu")
+    game.stack:push(DexEntryMenu.new(game, species, function()
+      ask(game, t[askKey] or ("You want\n" .. species .. "?"), function(yes)
+        if not yes then done() return end
+        flags["EVENT_GOT_" .. species] = true
+        flags.EVENT_DEFEATED_FIGHTING_DOJO = true
+        Commands.give_pokemon(ctx, species, 30)
+        -- Hide ONLY the chosen ball; the other stays (FightingDojo.asm hides
+        -- just the picked object's index) and routes to the greedy line above
+        -- when talked to (#197).
+        Commands.hide_object(ctx, "FIGHTING_DOJO", ownBall)
+        push(game, ("%s got\n%s!"):format(game.save.player.name, species), done)
+      end)
+    end))
   end
 end
 
@@ -229,27 +256,32 @@ M.FIGHTING_DOJO = {
 
 M.SILPH_CO_7F = {
   talk = {
-    TEXT_SILPHCO7F_SILPH_WORKER_M1 = function(game, ow, npc, done)
-      local t = text(game)
-      if game.save.flags.EVENT_GOT_LAPRAS then
-        push(game, t._SilphCo7FSilphWorkerM1LaprasDescriptionText
-          or "How is LAPRAS\ndoing?", done)
-        return
-      end
-      push(game, t._SilphCo7FSilphWorkerM1ThankYouText
-        or "Thank you for\nsaving us!\fI want you to\nhave this LAPRAS!",
-        function()
-          game.save.flags.EVENT_GOT_LAPRAS = true
-          local Commands = require("src.script.Commands")
-          Commands.give_pokemon({ save = game.save, game = game, overworld = ow },
-                                "LAPRAS", 15)
-          push(game, ("%s got\nLAPRAS!"):format(game.save.player.name),
-            function()
-              push(game, t._SilphCo7FSilphWorkerM1LaprasDescriptionText
-                or "It's a good\nswimmer!", done)
-            end)
-        end)
-    end,
+    -- command rows, not a Lua handler: give_pokemon needs a runner to AskName (#1049)
+    TEXT_SILPHCO7F_SILPH_WORKER_M1 = {
+      { "face_player" },
+      { "check_flag", "EVENT_GOT_LAPRAS" },
+      { "jump_if_true", "has_lapras" },
+      { "show_text", "_SilphCo7FSilphWorkerM1HaveThisPokemonText" },
+      { "give_pokemon", "LAPRAS", 15 },
+      { "jump_if_false", "box_full" },
+      -- flag ahead of the jingle, like the Celadon EEVEE (#426)
+      { "set_flag", "EVENT_GOT_LAPRAS" },
+      { "text_sound", "Get_Item1" },
+      { "show_text", "_GotMonText", { RAM = "LAPRAS" } },
+      { "show_text", "_SilphCo7FSilphWorkerM1LaprasDescriptionText" },
+      { "jump", "end" },
+      { "label", "box_full" },
+      { "show_text", "_BoxIsFullText" },
+      { "jump", "end" },
+      -- SilphCo7F.asm .saved_silph gates the thanks on Giovanni
+      { "label", "has_lapras" },
+      { "check_flag", "EVENT_BEAT_SILPH_CO_GIOVANNI" },
+      { "jump_if_true", "saved" },
+      { "show_text", "_SilphCo7FSilphWorkerM1IsOurPresidentOkText" },
+      { "jump", "end" },
+      { "label", "saved" },
+      { "show_text", "_SilphCo7FSilphWorkerM1SavedText" },
+    },
   },
 }
 
@@ -278,12 +310,11 @@ M.COPYCATS_HOUSE_2F = {
             return
           end
           game.stringBuffer = game.data.items.TM_MIMIC.name
-          require("src.core.Sound").play(game.data, "Get_Item1")
           Bag.remove(game.save, "POKE_DOLL", 1)
           game.save.flags.EVENT_GOT_TM31 = true
           push(game, t._CopycatsHouse2FCopycatReceivedTM31Text, function()
             push(game, t._CopycatsHouse2FCopycatTM31Explanation1Text, done)
-          end)
+          end, require("src.render.TextBox").soundOpts(game, "Get_Item1"))
         end)
       end)
     end,
@@ -449,7 +480,6 @@ M.CELADON_MART_ROOF = {
                     return
                   end
                   game.save.flags[g.flag] = true
-                  require("src.core.Sound").play(game.data, "Get_Item1")
                   local subs = { player = game.save.player.name,
                                  ram = game.data.items[g.tm].name }
                   local explain = fill(t[g.explain] or "", subs)
@@ -461,7 +491,7 @@ M.CELADON_MART_ROOF = {
                     else
                       done()
                     end
-                  end)
+                  end, require("src.render.TextBox").soundOpts(game, "Get_Item1"))
                 end)
               end,
               onCancel = done,
@@ -483,25 +513,28 @@ M.ROUTE_24 = {
       local flags = game.save.flags
       local function battleOrDone()
         if ow:trainerDefeated(npc) then
-          push(game, "I hate this!\nMy dreams of\nTEAM ROCKET...", done)
+          push(game, text(game)._Route24CooltrainerM1YouCouldBecomeATopLeaderText,
+            done)
         else
           ow:engageTrainer(npc, done)
         end
       end
       if not flags.EVENT_GOT_NUGGET then
-        push(game, "Congratulations!\nYou beat our 5\ncontest trainers!\f"
-          .. "You just earned a\nfabulous prize!", function()
+        local t = text(game)
+        push(game, t._Route24CooltrainerM1YouBeatOurContestText .. "\f"
+          .. t._Route24CooltrainerM1YouJustEarnedAPrizeText, function()
+          if not require("src.inventory.Bag").add(game.save, "NUGGET", 1,
+              game.data) then
+            push(game, t._Route24CooltrainerM1NoRoomText, done)
+            return
+          end
           flags.EVENT_GOT_NUGGET = true
-          require("src.inventory.Bag").add(game.save, "NUGGET", 1)
-          push(game, ("%s received\na NUGGET!"):format(game.save.player.name),
-            function()
-              ask(game, "By the way, would\nyou like to join\nTEAM ROCKET?",
-                function()
-                  push(game, "Arrgh! You are\nnot convinced?\fThen I'll show\n"
-                    .. "you my power!", battleOrDone)
-                end)
-            end)
-        end)
+          game.stringBuffer = game.data.items.NUGGET.name
+          push(game, t._Route24CooltrainerM1ReceivedNuggetText, function()
+            push(game, t._Route24CooltrainerM1JoinTeamRocketText,
+              battleOrDone)
+          end, require("src.render.TextBox").soundOpts(game, "Get_Item1"))
+        end, require("src.render.TextBox").soundOpts(game, "Get_Item1"))
         return
       end
       battleOrDone()

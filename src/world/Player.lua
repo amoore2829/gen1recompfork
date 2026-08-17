@@ -226,7 +226,16 @@ function Player:facingCell()
   return Collision.target(self.cellX, self.cellY, self.facing)
 end
 
+-- UpdatePlayerSprite jumps to .notMoving while BIT_FONT_LOADED is set
+-- -- engine/overworld/movement.asm:57
+local function textBoxUp()
+  local stack = require("src.core.Game").stack
+  local top = stack and stack.top and stack:top()
+  return top ~= nil and not top.isOverworld
+end
+
 function Player:walkPhase()
+  if textBoxUp() then return 0 end
   -- moving, the land-frame after a completed step, or an active wall-bonk
   -- (issue #230) animate; a standing sprite otherwise
   if not self.moving and not self.stepLanded
@@ -335,8 +344,13 @@ function Player:draw(camX, camY)
   local fishTile = self.fishing and self.fishTiles and self.fishTiles[facing]
   if fishTile then
     sprite:draw(px, py, camX, camY, facing, 0, false, true)
-    sprite:drawTile(fishTile, math.floor(px - camX),
-                    math.floor(py - camY) - 4 + 8, facing == "right")
+    -- The fishing pose replaces the bottom 8-pixel tile.  Use the sprite's
+    -- actual anchored frame origin so larger/custom sheets keep the pose at
+    -- their feet instead of falling back to the vanilla 16x16 top-left.
+    local sx, sy = sprite:getScreenOrigin(px, py, camX, camY)
+    sprite:drawTile(fishTile, sx,
+                    sy + math.max(0, sprite.frameHeight - 8),
+                    facing == "right")
     return
   end
   sprite:draw(px, py, camX, camY, facing, phase, flip)

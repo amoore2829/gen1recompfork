@@ -140,22 +140,29 @@ M.VIRIDIAN_CITY = {
 -- Daisy hands over the TOWN MAP once Oak's errand is under way
 -- (scripts/BluesHouse.asm BluesHouseDaisySittingText)
 M.BLUES_HOUSE = {
+  -- scripts/BluesHouse.asm:12-16
+  onEnter = function(game, ow)
+    game.save.flags.EVENT_ENTERED_BLUES_HOUSE = true
+  end,
   talk = {
     TEXT_BLUESHOUSE_DAISY_SITTING = {
-      { "face_player" },                                     -- 1
-      { "check_flag", "EVENT_GOT_TOWN_MAP" },                -- 2
-      { "jump_if_true", 10 },                                -- 3
-      { "check_flag", "EVENT_GOT_STARTER" },                 -- 4
-      { "jump_if_false", 12 },                               -- 5
-      { "show_text", "_BluesHouseDaisyOfferMapText" },       -- 6
+      { "face_player" },
+      { "check_flag", "EVENT_GOT_TOWN_MAP" },
+      { "jump_if_true", "got_map" },
+      { "check_flag", "EVENT_GOT_POKEDEX" },
+      { "jump_if_false", "too_early" },
+      { "show_text", "_BluesHouseDaisyOfferMapText" },
       -- _GotMapText: "{PLAYER} got a\n{RAM:wStringBuffer}!" -- the
       -- buffer supplies "TOWN MAP" (scripts/BluesHouse.asm GotMapText)
-      { "give_item", "TOWN_MAP", 1, "_GotMapText" },         -- 7
-      { "set_flag", "EVENT_GOT_TOWN_MAP" },                  -- 8
-      { "jump", 13 },                                        -- 9
-      { "show_text", "_BluesHouseDaisyUseMapText" },         -- 10
-      { "jump", 13 },                                        -- 11
-      { "show_text", "_BluesHouseDaisyRivalAtLabText" },     -- 12
+      { "give_item", "TOWN_MAP", 1, "_GotMapText" },
+      { "hide_object", "BLUES_HOUSE", "BLUESHOUSE_TOWN_MAP" },
+      { "set_flag", "EVENT_GOT_TOWN_MAP" },
+      { "jump", "end" },
+      { "label", "got_map" },
+      { "show_text", "_BluesHouseDaisyUseMapText" },
+      { "jump", "end" },
+      { "label", "too_early" },
+      { "show_text", "_BluesHouseDaisyRivalAtLabText" },
     },
   },
 }
@@ -294,6 +301,7 @@ M.BILLS_HOUSE = {
 
 M.ROUTE_25 = {
   onEnter = function(game, ow)
+    game.save.pikachuMapScriptActive = nil
     local flags = game.save.flags
     if flags.EVENT_LEFT_BILLS_HOUSE_AFTER_HELPING then return end
     local Commands = require("src.script.Commands")
@@ -326,6 +334,7 @@ M.VERMILION_CITY = {
   -- only read while EVENT_1ST_LOCK_OPENED is unset (the gym is only
   -- reachable through this map, so a fresh visit always re-rolls).
   onEnter = function(game, ow)
+    game.save.pikachuMapScriptActive = nil
     local puz = game.save.trashPuzzle or {}
     game.save.trashPuzzle = puz
     puz.first = love.math.random(0, 7) * 2
@@ -766,6 +775,28 @@ local function silphRocketsLeave(game, ow, onlyMap)
   end
 end
 
+-- SilphCo11FGiovanniAfterBattleScript (scripts/SilphCo11F.asm) is the whole
+-- aftermath: DisplayTextID TEXT_SILPHCO11F_GIOVANNI_YOU_RUINED_OUR_PLANS,
+-- GBFadeOutToBlack, SilphCo11FTeamRocketLeavesScript, Delay3,
+-- GBFadeInFromBlack, then SetEvent.  The port had only the hide pass, so the
+-- speech never played and every rocket blinked out in front of the player
+-- (#722).  Same hide list as silphRocketsLeave, spelled as script rows so the
+-- fade can hold over it.
+local function silphAftermathRows()
+  local rows = {
+    { "show_text", "_SilphCo11FGiovanniYouRuinedOurPlansText" },
+    { "fade", "out" },
+  }
+  for _, floor in ipairs(SILPH_ROCKET_OBJECTS) do
+    for _, name in ipairs(floor[2]) do
+      rows[#rows + 1] = { "hide_object", floor[1], name }
+    end
+  end
+  rows[#rows + 1] = { "wait", 3 }   -- Delay3
+  rows[#rows + 1] = { "fade", "in" }
+  return rows
+end
+
 M.SILPH_CO_11F = {
   -- Giovanni's battle is a COORDINATE TRIGGER, not a talk.
   -- SilphCo11FDefaultScript (scripts/SilphCo11F.asm) checks
@@ -778,9 +809,13 @@ M.SILPH_CO_11F = {
   -- line) would touch, and the whole Silph ending -- the flag, the Master
   -- Ball, the Saffron streets clearing -- silently never happened.
   --
-  -- engageTrainer shows TEXT_SILPHCO11F_GIOVANNI as the battle text and,
-  -- via victories.lua OPP_GIOVANNI#2, sets the event on a win; a loss
-  -- sets nothing, so the trigger re-arms exactly as vanilla does.
+  -- SilphCo11FDefaultScript orders it DisplayTextID TEXT_SILPHCO11F_GIOVANNI
+  -- FIRST, then MoveSprite .GiovanniMovement: he speaks from behind the desk
+  -- and only then walks the three tiles down.  Moving him before the box made
+  -- him cross the room in silence and deliver the speech point-blank (#869),
+  -- so the box comes first here and engageTrainer skips its own battle text.
+  -- victories.lua OPP_GIOVANNI#2 sets the event on a win; a loss sets
+  -- nothing, so the trigger re-arms exactly as vanilla does.
   onStep = function(game, ow, x, y)
     if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then return false end
     if not ((x == 6 and y == 13) or (x == 7 and y == 12)) then return false end
@@ -789,17 +824,28 @@ M.SILPH_CO_11F = {
       if npc.def and npc.def.name == "SILPHCO11F_GIOVANNI" then gio = npc break end
     end
     if not gio or ow:trainerDefeated(gio) then return false end
-    ow:scriptMove(gio, "down", 3, function()
-      gio:facePlayer(ow.player)
-      ow:engageTrainer(gio, function()
-        -- SilphCo11FTeamRocketLeavesScript: every Silph rocket leaves
-        -- after the loss (the street rockets are handled by
-        -- M.SAFFRON_CITY.onEnter in story4.lua).
-        if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
-          silphRocketsLeave(game, ow)
-        end
-      end)
-    end)
+    local TextBox = require("src.render.TextBox")
+    game.stack:push(TextBox.new(game,
+      game.data.text._SilphCo11FGiovanniText
+      or "Ah {PLAYER}!\nSo we meet again!",
+      function()
+        ow:scriptMove(gio, "down", 3, function()
+          gio:facePlayer(ow.player)
+          ow:engageTrainer(gio, function()
+            -- SilphCo11FGiovanniAfterBattleScript: the "Blast it all!"
+            -- speech, then SilphCo11FTeamRocketLeavesScript behind a fade so
+            -- every Silph rocket leaves off-screen (the street rockets are
+            -- handled by M.SAFFRON_CITY.onEnter in story4.lua).  Queued, not
+            -- run here: the battle's own callbacks are still unwinding, so
+            -- queueScript starts it on the first idle overworld frame --
+            -- after the end-battle "Arrgh!!" box victories.lua OPP_GIOVANNI#2
+            -- pushes (#722).
+            if game.save.flags.EVENT_BEAT_SILPH_CO_GIOVANNI then
+              ow:queueScript(silphAftermathRows())
+            end
+          end, nil, true)
+        end)
+      end))
     return true
   end,
   onEnter = function(game, ow)
@@ -942,6 +988,7 @@ M.VICTORY_ROAD_3F = {
   -- fall is onStep, not a collision block.
   onStep = function(game, ow, x, y)
     if x == 23 and y == 15 then
+      require("src.core.Sound").play(game.data, "Faint_Fall")
       ow:startWarpTo("VICTORY_ROAD_2F", 22, 16, ow.player.facing)
       return true
     end
@@ -980,40 +1027,63 @@ M.VICTORY_ROAD_3F = {
 local championsRoomRivalScript = {
   { "face_player" },                                        -- 1
   { "check_flag", "EVENT_BEAT_CHAMPION_RIVAL_THIS_RUN" },   -- 2
-  { "jump_if_true", 25 },                                   -- 3  past end
+  -- "end" rather than a row number past the tail: this script grew by a row
+  -- when the follow-Oak walk landed (#704), which silently turned the old
+  -- numeric 26 into a jump ONTO the closing HALL_OF_FAME warp instead of past
+  -- it, so a returning champion warped straight into the induction.
+  { "jump_if_true", "end" },                                -- 3
   { "show_text", "_ChampionsRoomRivalIntroText" },          -- 4
-  { "rival_battle", "OPP_RIVAL3", 1 },                      -- 5
-  { "jump_if_false", 25 },                                  -- 6  past end
-  { "set_flag", "EVENT_BEAT_CHAMPION_RIVAL_THIS_RUN" },     -- 7
-  { "set_flag", "EVENT_BEAT_CHAMPION_RIVAL" },              -- 8
+  -- ChampionsRoomRivalReadyToBattleScript plays MUSIC_FINAL_BATTLE after
+  -- the intro text, before the battle itself (#706); pushBattle's wipe-time
+  -- playBattle("final") then no-ops on the same song, so the theme stays
+  -- continuous into the fight
+  { "play_music", "Music_FinalBattle" },                    -- 5
+  { "rival_battle", "OPP_RIVAL3", 1 },                      -- 6
+  -- losing halts here; the numeric target this replaced pointed at the
+  -- closing warp, which inducted a player who had just lost the fight (#704)
+  { "jump_if_false", "end" },                               -- 7
+  { "set_flag", "EVENT_BEAT_CHAMPION_RIVAL_THIS_RUN" },     -- 8
+  { "set_flag", "EVENT_BEAT_CHAMPION_RIVAL" },              -- 9
   -- ChampionsRoomRivalDefeatedScript re-displays TEXT_CHAMPIONSROOM_RIVAL,
   -- whose text_asm takes the EVENT_BEAT_CHAMPION_RIVAL branch =
   -- _ChampionsRoomRivalAfterBattleText (the in-battle _RivalDefeatedText
   -- is the port's generic "<PLAYER> defeated BLUE!" engine line instead).
-  { "show_text", "_ChampionsRoomRivalAfterBattleText" },    -- 9
+  { "show_text", "_ChampionsRoomRivalAfterBattleText" },    -- 10
   -- ChampionsRoomOakArrivesScript: Music_Cities1AlternateTempo
   -- (Cities1, kept into HALL_OF_FAME like BIT_NO_MAP_MUSIC after
-  -- defeating RIVAL3), then Oak's "{PLAYER}!" + reveal + walk in
-  { "play_music", "Music_Cities1", { keep = true } },       -- 10
-  { "show_text", "_ChampionsRoomOakText" },                 -- 11
-  { "show_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 12
-  { "move_npc", 2, "up", 5 },                               -- 13 OakEntranceAfterVictoryMovement
+  -- defeating RIVAL3), then Oak's "{PLAYER}!" + reveal + walk in.
+  -- audio/alternate_tempo.asm Music_Cities1AlternateTempo is not a plain
+  -- PlayMusic: it fades the current song out (wAudioFadeOutControl = 10),
+  -- waits 100 frames for the fade, then restarts Cities1 with channel 1
+  -- pointed at Music_Cities1_Ch1_AlternateTempo -- `tempo 232` where the
+  -- normal Music_Cities1_Ch1 opens `tempo 144`, i.e. the slower, heavier
+  -- reading of the town theme this scene is known for (#847).
+  { "fade_music", 10 },                                     -- 11
+  { "wait", 100 },                                          -- 12
+  { "play_music", "Music_Cities1", { keep = true, tempo = 232 } }, -- 13
+  { "show_text", "_ChampionsRoomOakText" },                 -- 14
+  { "show_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 15
+  { "move_npc", 2, "up", 5 },                               -- 16 OakEntranceAfterVictoryMovement
   -- OakCongratulatesPlayerScript: rival faces left, Oak faces down
-  { "face_object", 1, "left" },                             -- 14
-  { "face_object", 2, "down" },                             -- 15
-  { "show_text", "_ChampionsRoomOakCongratulatesPlayerText" }, -- 16
+  { "face_object", 1, "left" },                             -- 17
+  { "face_object", 2, "down" },                             -- 18
+  { "load_player_starter_name" },
+  { "show_text", "_ChampionsRoomOakCongratulatesPlayerText" }, -- 19
   -- OakDisappointedWithRivalScript: Oak turns to the rival (right)
-  { "face_object", 2, "right" },                            -- 17
-  { "show_text", "_ChampionsRoomOakDisappointedWithRivalText" }, -- 18
+  { "face_object", 2, "right" },                            -- 20
+  { "show_text", "_ChampionsRoomOakDisappointedWithRivalText" }, -- 21
   -- OakComeWithMeScript: Oak faces down again, then exits up
-  { "face_object", 2, "down" },                             -- 19
-  { "show_text", "_ChampionsRoomOakComeWithMeText" },       -- 20
-  { "move_npc", 2, "up", 2 },                               -- 21 OakExitChampionsRoomMovement
-  { "hide_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 22
+  { "face_object", 2, "down" },                             -- 22
+  { "show_text", "_ChampionsRoomOakComeWithMeText" },       -- 23
+  { "move_npc", 2, "up", 2 },                               -- 24 OakExitChampionsRoomMovement
+  { "hide_object", "CHAMPIONS_ROOM", "CHAMPIONSROOM_OAK" },  -- 25
+  -- scripts/ChampionsRoom.asm WalkToHallOfFame_RLEMovement
+  { "move_player", "left", 1 },
+  { "move_player", "up", 3 },                               -- 27
   -- hand the induction off to the HALL_OF_FAME room (consumed by its
   -- onEnter), then warp up into it (destWarp 1 lands at (4,7) facing up)
-  { "set_field", "pendingHallOfFame", true },               -- 23
-  { "warp", "HALL_OF_FAME", 4, 7, "up" },                   -- 24
+  { "set_field", "pendingHallOfFame", true },               -- 28
+  { "warp", "HALL_OF_FAME", 4, 7, "up" },                   -- 29
 }
 
 M.CHAMPIONS_ROOM = {
@@ -1173,6 +1243,7 @@ local function pokemonTower2FRivalScript(playerX)
     { "jump_if_false", "end" },                                   -- 6 loss: stay
     { "set_flag", "EVENT_BEAT_POKEMON_TOWER_RIVAL" },             -- 7
     { "show_text", "_PokemonTower2FRivalDefeatedText" },          -- 8
+    { "play_music", "Music_MeetRival", { start = "rival" } },
     { "walk_npc", 1, exitDirs },                                  -- 9
     { "hide_object", "POKEMON_TOWER_2F", "POKEMONTOWER2F_RIVAL" }, -- 10
     { "jump", "end" },                                            -- 11

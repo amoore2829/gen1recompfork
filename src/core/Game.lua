@@ -6,14 +6,20 @@ local FixedStep = require("src.core.FixedStep")
 local Input = require("src.core.Input")
 local Logger = require("src.core.Logger")
 local Renderer = require("src.render.Renderer")
+local GameViewport = require("src.render.GameViewport")
 local SaveData = require("src.core.SaveData")
 local StateStack = require("src.core.StateStack")
 local TouchControls = require("src.core.TouchControls")
+local GamepadMap = require("src.core.GamepadMap")
 local ModLoader = require("src.mods.Loader")
 local ModRuntime = require("src.mods.Runtime")
 local Screens = require("src.ui.Screens")
 
 local Game = {}
+
+local function renderVisible(stack, state)
+  return state and (not stack.renderVisible or stack:renderVisible(state))
+end
 
 -- dev-mode gate for the F5/backtick hotkeys; false keeps every src/dev
 -- module unloaded, so a player boot never touches a byte of dev code
@@ -40,12 +46,22 @@ function Game:load()
   -- render pipelines dispatch off the merged dataset; point them at the
   -- one the mods just merged into before anything can draw a frame
   require("src.render.Pipelines").install(Data)
+  -- Same reason, same moment: TypeChart caches the merged type records in an
+  -- upvalue, and until now only BattleState loaded it, on entering a battle.
+  -- Every non-battle reader of a type -- the summary screen's TYPE1/TYPE2
+  -- rows, the move-select TYPE/ box -- ran against an unloaded module and got
+  -- the raw id back instead of the display name, so a translation could not
+  -- reach them. Loading here means a type reads the same whoever asks first.
+  require("src.battle.TypeChart").load(Data)
 
   self.input = Input
   Input:init()
 
   self.touchControls = TouchControls
   TouchControls:init()
+  TouchControls:setHotkeyHandler(function(action, pressed)
+    self:touchSkinHotkey(action, pressed)
+  end)
 
   self.renderer = Renderer
   Renderer:init()
@@ -147,14 +163,15 @@ function Game:makeTitleState()
       self:applyOptions(self.save.options)
       self.stack:push(OverworldState, self.save.player.map,
                       self.save.player.x, self.save.player.y,
-                      self.save.player.facing)
+                      self.save.player.facing,
+                      { via = "boot", freshBoot = true })
       Screens.push(self, bootScreens(self).newGame or "OakSpeech",
                    function() end)
     end,
     onContinue = function()
       local loaded, recovered = SaveData.load()
       if loaded then
-        self:restoreSave(loaded, recovered)
+        self:restoreSave(loaded, recovered, { freshBoot = true })
       end
     end,
   })
@@ -169,6 +186,40 @@ function Game:returnToTitle()
   require("src.core.Music").stop()
   while self.stack:top() do self.stack:pop() end
   self.stack:push(self:makeTitleState())
+end
+
+Game.SKIN_FAST_FORWARD = 4
+
+function Game:touchSkinHotkey(action, pressed)
+  if action == "fast_forward_hold" then
+    if pressed then
+      self.skinSpeedSaved = self.speedOverride
+      self.speedOverride = Game.SKIN_FAST_FORWARD
+    else
+      self.speedOverride = self.skinSpeedSaved
+      self.skinSpeedSaved = nil
+    end
+  elseif action == "fast_forward_toggle" then
+    if pressed then self:_cycleSpeed(1) end
+  elseif action == "soft_reset" then
+    if pressed then
+      Input:reset()
+      TouchControls:reset()
+      self:returnToTitle()
+    end
+  elseif action == "menu" then
+    if pressed then
+      local Screens = require("src.ui.Screens")
+      local top = self.stack and self.stack:top()
+      if top and not top.isTouchSkinMenu then
+        local state = Screens.build(self, "OptionsMenu")
+        if state then
+          state.isTouchSkinMenu = true
+          self.stack:push(state)
+        end
+      end
+    end
+  end
 end
 
 function Game:step(dt)
@@ -209,24 +260,44 @@ function Game:step(dt)
   -- it on its own real-time 60Hz accumulator instead.
 end
 
+-- The per-category (RFC 0007) save.options multiplier for whichever of
+-- "battle"/"overworld"/"menu" Game.speedCategoryInStack says is active
+-- right now.  This is the "vanilla" the core.logic_speed hook wraps below
+-- -- Game:logicSpeed calls it AFTER the link and speedOverride checks, so
+-- neither a mod nor the category resolution ever has a seam to defeat them.
+function Game:_resolveLogicSpeed()
+  local GameSpeed = require("src.core.GameSpeed")
+  local category = Game.speedCategoryInStack(self.stack)
+  local key = GameSpeed.optionKey(category)
+  local opts = self.save and self.save.options
+  return GameSpeed.clamp(opts and opts[key] or GameSpeed.DEFAULT)
+end
+
 -- The logic multiplier for this frame. Read live rather than cached so the
--- Options row takes effect immediately; speedOverride is the --speed /
+-- Options rows take effect immediately; speedOverride is the --speed /
 -- POKEPORT_SPEED run argument, which wins over the saved option so a bot
 -- or screenshot run does not depend on whatever the player last chose.
 function Game:logicSpeed()
   local GameSpeed = require("src.core.GameSpeed")
   -- Link play is always 1X on both machines, and this wins over every other
-  -- source including POKEPORT_SPEED.  Fast-forward multiplies the logic
-  -- clock, so a peer at 10X burned a tournament shot clock ten times faster
-  -- than the opponent it is racing, and drove its own animation/message
-  -- queue at a different rate than the peer it is locked to.  Nothing about
-  -- a match should depend on what either player set this to.
+  -- source including POKEPORT_SPEED and every per-category option.
+  -- Fast-forward multiplies the logic clock, so a peer at 10X burned a
+  -- tournament shot clock ten times faster than the opponent it is racing,
+  -- and drove its own animation/message queue at a different rate than the
+  -- peer it is locked to.  Nothing about a match should depend on what
+  -- either player set this to -- checked here, before the core.logic_speed
+  -- hook ever runs, so a mod cannot defeat it either.
   if self.linkSession or (self.linkNet and not self.linkNet.closed) then
     return 1
   end
   if self.speedOverride then return GameSpeed.clamp(self.speedOverride) end
-  local opts = self.save and self.save.options
-  return GameSpeed.clamp(opts and opts.speed or GameSpeed.DEFAULT)
+  -- Clamp here too, not just in _resolveLogicSpeed's vanilla path: a mod's
+  -- core.logic_speed hook can return anything (0, negative, nil, NaN) and
+  -- Hooks:call only guards against a hook that throws, not one that
+  -- returns a bad value, so an unclamped result would flow straight into
+  -- the FixedStep accumulator math below and freeze or destabilize logic.
+  return GameSpeed.clamp(ModRuntime.call("core.logic_speed",
+    function(g) return g:_resolveLogicSpeed() end, self))
 end
 
 function Game:update(dt)
@@ -272,10 +343,45 @@ function Game.worldBgBattleDim(stack)
   for i = #(stack and stack.states or {}), 1, -1 do
     local state = stack.states[i]
     if state and state.bgMode and state:bgMode() == "world" then
+      -- The extended fixed HUD intentionally exposes the live world across
+      -- the whole physical window.  Keep this as a world-backed battle (zero
+      -- is non-nil, so scaling and overlay holds remain active), but do not
+      -- paint the standard dim veil around the native battle rectangle.
+      if state.extendedWorldHUD and state:extendedWorldHUD() then
+        return 0
+      end
       return state.BG_WORLD_DIM or 0.55
     end
   end
   return nil
+end
+
+-- Does the stack contain the opt-in fixed Extended WORLD battle?  Renderer
+-- uses this separately from battleDim: the world remains the surround, while
+-- the native-width battle field receives a paper backing from top to bottom.
+function Game.extendedWorldHUDInStack(stack)
+  for i = #(stack and stack.states or {}), 1, -1 do
+    local state = stack.states[i]
+    if state and state.extendedWorldHUD and state:extendedWorldHUD() then
+      return true
+    end
+  end
+  return false
+end
+
+-- Is a BATTLE BG "world" battle composing itself over the live map right now?
+-- Same whole-stack walk as worldBgBattleDim, asked for a different reason: the
+-- dark-cave shade shift (wMapPalOffset) must not reach a frame a battle is
+-- drawing in.  InitBattleCommon (engine/battle/core.asm) pushes wMapPalOffset,
+-- InitBattleVariables (engine/battle/init_battle_variables.asm) writes 0 over
+-- it and core.asm pops it back when the battle ends, so a battle in an
+-- un-flashed Rock Tunnel is lit on hardware.  Every other BATTLE BG gets that
+-- for free -- no map draws beneath an opaque battle, so nothing re-arms the
+-- per-frame shade map -- but "world" keeps the overworld drawing underneath,
+-- and its arming then darkened the battle's own pics, HUD and text at colorize
+-- time (#773).
+function Game.worldBgBattleInStack(stack)
+  return Game.worldBgBattleDim(stack) ~= nil
 end
 
 -- Does anything on the stack want the surface scaled to FILL the window
@@ -310,11 +416,42 @@ function Game.wideBattleInStack(stack)
   return nil
 end
 
+-- Which of "battle"/"overworld"/"menu" per-category GAME SPEED (RFC 0007)
+-- applies right now. Whole-stack, the same idiom as fillScaleInStack/
+-- wideBattleInStack above: an overlay with neither marker (PartyMenu,
+-- ChoiceBox, a NamingScreen, a text box) is transparent to the walk and
+-- inherits whatever is under it, making the category a property of the
+-- STACK POSITION the overlay sits over, not of the overlay itself. A
+-- scripted sequence (script.started/ended) never pushes a state of its
+-- own either -- it runs through the owning overworld/battle state's own
+-- script runner or message queue -- so it inherits the same way. Nothing
+-- identifying as either (the title screen, credits, an intro cutscene
+-- with nothing under it) falls to "menu", the bucket every non-gameplay
+-- screen gets; see the RFC's Decisions section for the full reasoning.
+function Game.speedCategoryInStack(stack)
+  local states = stack and stack.states
+  for i = #(states or {}), 1, -1 do
+    local state = states[i]
+    if state and state.isBattle then return "battle" end
+    if state and state.isOverworld then return "overworld" end
+  end
+  return "menu"
+end
+
 -- Whether a state on the stack composes its own screen and so wants the
 -- edge anchors held off (BattleState.holdsUIAnchors).  Whole-stack, like
 -- everything else here: the text box and YES/NO a battle puts up are states
 -- of their own sitting above it, and they are exactly the elements that must
 -- stay inside the battle's composition rather than dock to the window.
+-- UI LAYOUT: is edge docking switched on?  Only the explicit "dynamic" turns
+-- it on, so a save written before the option existed -- and any caller with no
+-- save at all, which is most of the headless suites -- gets CENTERED, the
+-- behaviour the port shipped with.
+function Game.dynamicUI(save)
+  local options = save and save.options
+  return options ~= nil and options.uiLayout == "dynamic"
+end
+
 function Game.uiAnchorsHeldInStack(stack)
   for i = #(stack and stack.states or {}), 1, -1 do
     local state = stack.states[i]
@@ -324,13 +461,13 @@ function Game.uiAnchorsHeldInStack(stack)
 end
 
 -- Where Game:draw starts drawing this frame.  Normally the topmost opaque
--- state (StateStack:visibleBase) -- but BATTLE BG "world" composes the battle
--- over the LIVE map, and an opaque state pushed on top of it (the party menu,
--- the bag) becomes that base, cutting the overworld -- and with it the world
--- pass -- out of the frame entirely.  The backdrop the battle established
--- then collapses to endFrame's flat black clear for as long as the menu is
--- up.  So a world-bg battle keeps the frame starting from underneath itself
--- until it leaves the stack, the same hold uiFill and the dim already use.
+-- state (StateStack:visibleBase) -- but an opaque menu pushed over a WIDE
+-- battle must not prevent that battle from drawing.  Native WIDE battles own
+-- the 304x144 surround around a centred classic menu, while external arena
+-- providers establish their window-sized scene from BattleState:draw.  If the
+-- menu becomes the draw base, neither owner runs and the menu's white field
+-- replaces the whole presentation.  BATTLE BG "world" additionally needs the
+-- overworld below the battle, as before.
 --
 -- Only the START of the draw moves.  The clear stays keyed to the real
 -- visibleBase, so the menu still gets its opaque canvas and draws exactly as
@@ -341,9 +478,13 @@ function Game.drawBaseInStack(stack, visibleBase)
   local states = stack and stack.states or {}
   for i = visibleBase - 1, 1, -1 do
     local state = states[i]
-    if state and state.bgMode and state:bgMode() == "world" then
+    local worldBattle = state and state.bgMode and state:bgMode() == "world"
+    local wideBattle = state and state.isWideBattleLayout
+      and state:isWideBattleLayout()
+    if worldBattle or wideBattle then
       -- restart the search from under the battle: the highest opaque state at
-      -- or below it (the overworld), not the menu sitting over it
+      -- or below it (the battle itself for white/black WIDE, the overworld for
+      -- a non-opaque world-backed battle), not the menu sitting over it
       for j = i, 1, -1 do
         if states[j].isOpaque then return j end
       end
@@ -351,6 +492,14 @@ function Game.drawBaseInStack(stack, visibleBase)
     end
   end
   return visibleBase
+end
+
+-- A classic overlay above the approved world-backed extended HUD paints only
+-- its centred area. Keep the wider owner surface transparent so its margins
+-- continue to reveal the world instead of becoming an opaque white sheet.
+function Game.uiCanvasTransparent(worldBelow, worldDrawn, wideBattle)
+  return worldBelow or (worldDrawn and wideBattle ~= nil
+    and wideBattle.extendedHUD and wideBattle:extendedHUD())
 end
 
 -- Shift classic SGB zones to the centred UI. A full-width base zone extends
@@ -373,6 +522,7 @@ local function centerClassicZones(zones, offset)
 end
 
 function Game:draw()
+  GameViewport.begin(1)
   -- the UI canvas clears transparent when the overworld's world pass
   -- shows through beneath it; opaque full-screen states get the classic
   -- white clear
@@ -406,6 +556,7 @@ function Game:draw()
   -- the stack for the same reason as uiFill above -- a prompt opened during
   -- the battle must not drop the dim for a frame.
   Renderer.battleDim = Game.worldBgBattleDim(self.stack)
+  Renderer.extendedWorldBand = Game.extendedWorldHUDInStack(self.stack)
   -- ...and for the same reason the UI's own scale has to know the world is
   -- still the backdrop while an opaque menu covers it.  Renderer:uiScale
   -- steps the UI down with the survey zoom only while a world is behind it,
@@ -415,17 +566,32 @@ function Game:draw()
   Renderer.uiWorldHold = Renderer.battleDim ~= nil
   -- ...and a battle keeps its dialogue box and YES/NO inside its own screen
   -- instead of letting them dock to the window edge.
+  -- UI LAYOUT: CENTERED (the default) is a fixed letterbox -- every element
+  -- stays inside the 160x144 canvas and the UI does not follow the survey
+  -- zoom, so the screen furniture never moves or resizes under the player.
+  -- That is the composition the port shipped with.  DYNAMIC opts into both
+  -- halves: the dialogue box docks to the window's bottom edge, the START
+  -- menu to its top right, and the whole UI steps down with the zoom.
+  Renderer.uiCentered = not Game.dynamicUI(self.save)
   Renderer.uiAnchorHold = Game.uiAnchorsHeldInStack(self.stack)
-  Renderer:beginFrame(worldBelow)
+  Renderer:beginFrame(Game.uiCanvasTransparent(
+    worldBelow, worldDrawn, wideBattle))
   for i = drawFrom, #self.stack.states do
     local state = self.stack.states[i]
     local wideState = state and state.isWideBattleLayout
       and state:isWideBattleLayout()
-    if state and state.draw then
+    if renderVisible(self.stack, state) and state.draw then
       if classicOffset ~= 0 and not wideState then
         love.graphics.push()
         love.graphics.translate(classicOffset, 0)
+        -- a classic state reports its trueColor rects in its own 160x144
+        -- coordinates, so they take the same shift its pixels just got --
+        -- centerClassicZones already does exactly this to its zone list,
+        -- and without the pair the unshaded re-blit misses the pic (#637)
+        local P = require("src.render.PaletteFX")
+        P.setMarkOffset(classicOffset)
         state:draw()
+        P.setMarkOffset(0)
         love.graphics.pop()
       else
         state:draw()
@@ -438,7 +604,7 @@ function Game:draw()
   local zones, worldZones, zoneOwner
   for i = #self.stack.states, 1, -1 do
     local s = self.stack.states[i]
-    if s.sgbPalettes then
+    if renderVisible(self.stack, s) and s.sgbPalettes then
       zones = s:sgbPalettes(self)
       zoneOwner = s
       break
@@ -470,7 +636,9 @@ function Game:draw()
   if ModRuntime.wantsHook("render.hud") then
     ModRuntime.call("render.hud", function() end, self, viewport)
   end
-  -- on-screen mobile controls: pure screen-space, over the finished frame
+  GameViewport.finish(self)
+  -- OS-window chrome: keep the pad full-size and above any composed companion
+  -- view instead of capturing and shrinking it with the game viewport.
   TouchControls:draw()
 end
 
@@ -491,6 +659,31 @@ function Game:wheelmoved(_, dy)
   elseif dy < 0 then
     self:zoomStep(-1)
   end
+end
+
+function Game:_cycleSpeed(dir)
+  if not (self.save and self.save.options) then return end
+  local busy
+  local ow = self.overworld
+  if ow then
+    local top = self.stack:top()
+    busy = ow.transitioning
+      or (top == ow and (
+           (ow.runner and ow.runner.isRunning and ow.runner:isRunning())
+        or (ow.scriptMoves and #ow.scriptMoves > 0)
+        or ow.engaging or ow.emote))
+  end
+  if busy then return end
+  -- Cycles whichever category Game.speedCategoryInStack says is active
+  -- right now (RFC 0007) -- pressing the hotkey during a battle speeds up
+  -- just the battle, on the overworld just the walk, in a menu just the
+  -- menu. A single physical control that means "speed up whatever I'm
+  -- looking at right now" needs no new UI and matches what a player
+  -- pressing it mid-battle almost certainly wants.
+  local GameSpeed = require("src.core.GameSpeed")
+  local key = GameSpeed.optionKey(Game.speedCategoryInStack(self.stack))
+  self.save.options[key] = GameSpeed.cycle(self.save.options[key], dir)
+  self:writeOptions()
 end
 
 function Game:keypressed(key)
@@ -522,13 +715,23 @@ function Game:keypressed(key)
     return
   elseif key == "f2" then
     local loaded, recovered = SaveData.load()
-    if loaded then self:restoreSave(loaded, recovered) end
+    if loaded then
+      -- F2 jumps straight to the loaded save's map/position, with no
+      -- walking transition -- a hard state teleport like Continue, not a
+      -- smooth warp -- whether pressed at the title screen or mid-session.
+      self:restoreSave(loaded, recovered, { freshBoot = true })
+    end
     return
   elseif key == "-" then
     self:zoomStep(-1)
     return
   elseif key == "=" then
     self:zoomStep(1)
+    return
+  elseif key == "1" then
+    -- cycle GAME SPEED (0.25X → 200X, logic only; audio unaffected);
+    -- shoulders/triggers on gamepad do the same (see gamepadpressed)
+    self:_cycleSpeed(1)
     return
   elseif key == "2" then
     -- cycle COLORS (GBC / OG / OG INV / GBC INV / CLASSIC); the pack change
@@ -610,11 +813,45 @@ function Game:gamepadpressed(joystick, button)
   -- a controller is being used: the touch overlay steps aside until the
   -- next screen touch (mobile only; a no-op elsewhere)
   TouchControls:noteGamepad()
+  -- Select held? Needed both to suppress shoulder speed hotkeys (Select+L
+  -- is a display chord on NX) and for the chord path below.
+  local selectHeld = Input:isDown("select")
+  if not selectHeld and joystick and joystick.isGamepadDown then
+    local ok, down = pcall(function()
+      return joystick:isGamepadDown("back")
+    end)
+    selectHeld = ok and down == true
+  end
+  -- shoulder buttons and analog triggers cycle GAME SPEED (R1/RB or
+  -- R2/RT = faster, L1/LB or L2/LT = slower; same as keyboard hotkey
+  -- 1).  LÖVE reports an analog trigger as gamepadpressed once it
+  -- crosses the press threshold, so a trigger pull lands here like any
+  -- other pad button.  Skip while Select is held so Select+L can reach
+  -- displayChordDigit ("7").
+  if not selectHeld then
+    if button == "rightshoulder" or button == "righttrigger" then
+      self:_cycleSpeed(1)
+      return
+    elseif button == "leftshoulder" or button == "lefttrigger" then
+      self:_cycleSpeed(-1)
+      return
+    end
+  end
   -- BindingsMenu's pad capture rides the same top-state routing as keys
   local top = self.stack and self.stack:top()
   if top and top.onGamepadPressed then
     top:onGamepadPressed(button)
     return
+  end
+  -- Select+face display chords → same digit path as Game:keypressed
+  -- (COLORS/TILT/pipelines). Intercept before Input so face does not
+  -- also fire GB A/B. Dual-path: raw already ignored when isGamepad().
+  if selectHeld then
+    local digit = GamepadMap.displayChordDigit(button)
+    if digit then
+      self:keypressed(digit)
+      return
+    end
   end
   Input:gamepadpressed(joystick, button)
 end
@@ -690,37 +927,192 @@ function Game:joystickhat(joystick, hat, direction)
 end
 
 -- Window focus/visibility flips: a release due while unfocused/hidden can
--- be swallowed by the OS. Reset on both edges -- gaining focus with a
--- physically held key won't re-fire keypressed, so trusting leftover
--- state is worse than asking the player to re-press.
+-- be swallowed by the OS. Reset on both edges; on the regain, reconcile
+-- re-arms only what is still physically held -- a held key won't re-fire
+-- keypressed by itself, and without the rebuild a spurious lifecycle event
+-- parked the player until every direction was re-pressed (#799).
 function Game:focus(f)
   Input:reset()
+  if f then Input:reconcile() end
   TouchControls:reset()
+  self:cancelPointers()
 end
 
 function Game:visible(v)
+  if v then
+    self:onResume()
+  else
+    Input:reset()
+    TouchControls:reset()
+    self:cancelPointers()
+  end
+end
+
+function Game:onResume()
   Input:reset()
+  Input:reconcile()
   TouchControls:reset()
+  self:cancelPointers()
+  -- Chip music may survive NX suspend as a duplicate stream; stop it and let
+  -- the active screen re-cue on the next frame (hardware audio check: T19).
+  -- Desktop/mobile window-visible flips must not kill overworld music.
+  if require("src.core.Platform").isNX() then
+    require("src.core.ChipAudio").stopMusic()
+  end
+  local SwitchDiagnostics = require("src.debug.SwitchDiagnostics")
+  if SwitchDiagnostics.isEnabled() then
+    SwitchDiagnostics.onEvent("lifecycle", { event = "resume" })
+  end
+end
+
+function Game:recoverInput(event, joystick)
+  Input:reset()
+  -- A hotplug can arrive with no hotplug (macOS Bluetooth re-enumeration),
+  -- and the blanket reset above also drops unrelated keyboard holds; put
+  -- back whatever is still physically down (#799).
+  Input:reconcile()
+  TouchControls:reset()
+  -- reset just dropped every source, mod holds included: retire the mods'
+  -- outstanding press tokens so nothing stale can be released later, and
+  -- tell subscribers their live pointers died (#807)
+  if self.mods and self.mods.releaseModInput then self.mods:releaseModInput() end
+  self:cancelPointers()
+  local SwitchDiagnostics = require("src.debug.SwitchDiagnostics")
+  if SwitchDiagnostics.isEnabled() then
+    if joystick then
+      SwitchDiagnostics.onJoystickEvent(event, joystick)
+    else
+      SwitchDiagnostics.onEvent("lifecycle", { event = event })
+    end
+  end
+end
+
+function Game:joystickadded(joystick)
+  self:recoverInput("joystickadded", joystick)
 end
 
 -- A disconnected/dropped controller can't send the button-up for whatever
 -- it was holding, so drop all input state rather than try to guess which
 -- flags it owned.
 function Game:joystickremoved(joystick)
-  Input:reset()
+  self:recoverInput("joystickremoved", joystick)
   TouchControls:joystickremoved()
 end
 
-function Game:touchpressed(id, x, y)
-  TouchControls:touchpressed(id, x, y)
+-- Gameplay pointer seam (#807).  TouchControls keeps first refusal: a
+-- pointer that begins on a virtual control belongs to the pad for its
+-- whole lifecycle and never reaches mods, while one that begins outside
+-- stays mod-visible even if it later wanders across a control
+-- (TouchControls only tracks ids it captured at press).  Everything a
+-- subscriber costs -- the per-pointer records in self.modPointers, the
+-- payload tables -- sits behind wantsHook, so a mod-free boot allocates
+-- nothing here.
+
+-- vanilla for input.pointer: nobody consumed the event
+local function pointerUnclaimed() return false end
+
+-- coordinates are LOVE window units, the same space render.hud's viewport
+-- and the touch overlay lay out in
+function Game:pointerEvent(phase, source, id, x, y, dx, dy, pressure, button)
+  local gameX, gameY, insideGame = GameViewport.toLocal(x, y)
+  return ModRuntime.call("input.pointer", pointerUnclaimed, self, {
+    phase = phase, source = source, id = id, x = x, y = y,
+    gameX = gameX, gameY = gameY, insideGame = insideGame,
+    dx = dx or 0, dy = dy or 0, pressure = pressure, button = button,
+  })
 end
 
-function Game:touchmoved(id, x, y)
+function Game:touchpressed(id, x, y, dx, dy, pressure)
+  if TouchControls:touchpressed(id, x, y) then return end
+  if not ModRuntime.wantsHook("input.pointer") then return end
+  -- POKEPORT_TOUCH routes the mouse through here as a stand-in finger
+  -- under the id "mouse" (see main.lua); mods still see its true source
+  local source = id == "mouse" and "mouse" or "touch"
+  self.modPointers = self.modPointers or {}
+  self.modPointers[id] = { source = source, x = x, y = y,
+                           pressure = pressure }
+  self:pointerEvent("pressed", source, id, x, y, dx, dy, pressure)
+end
+
+function Game:touchmoved(id, x, y, dx, dy, pressure)
   TouchControls:touchmoved(id, x, y)
+  local p = self.modPointers and self.modPointers[id]
+  if not p then return end
+  -- the POKEPORT_TOUCH mouse path carries no deltas; derive them from the
+  -- pointer's last seen position so drags read the same either way
+  if dx == nil then dx, dy = x - p.x, y - p.y end
+  p.x, p.y = x, y
+  if pressure ~= nil then p.pressure = pressure end
+  if ModRuntime.wantsHook("input.pointer") then
+    self:pointerEvent("moved", p.source, id, x, y, dx, dy, pressure)
+  end
 end
 
-function Game:touchreleased(id, x, y)
+function Game:touchreleased(id, x, y, dx, dy, pressure)
   TouchControls:touchreleased(id, x, y)
+  local p = self.modPointers and self.modPointers[id]
+  if not p then return end
+  self.modPointers[id] = nil
+  if ModRuntime.wantsHook("input.pointer") then
+    self:pointerEvent("released", p.source, id, x, y, dx, dy, pressure)
+  end
+end
+
+-- A real mouse without POKEPORT_TOUCH (#807).  Gameplay itself has no
+-- mouse verbs, so the pointer hook is the only consumer and everything is
+-- behind the wantsHook gate.  A synthesized istouch twin is dropped
+-- unconditionally: the same contact already arrived through
+-- Game:touchpressed, and forwarding both would fire a mobile touch twice.
+function Game:mousepressed(x, y, button, istouch)
+  if istouch then return end
+  if not ModRuntime.wantsHook("input.pointer") then return end
+  self.modPointers = self.modPointers or {}
+  local p = self.modPointers.mouse
+  if p then
+    p.held, p.x, p.y = (p.held or 1) + 1, x, y
+  else
+    self.modPointers.mouse = { source = "mouse", x = x, y = y,
+                               held = 1, button = button }
+  end
+  self:pointerEvent("pressed", "mouse", "mouse", x, y, 0, 0, nil, button)
+end
+
+-- hover moves are delivered too (button = nil); only pressed pointers are
+-- tracked, because only they owe a released/cancelled later
+function Game:mousemoved(x, y, dx, dy, istouch)
+  if istouch then return end
+  local p = self.modPointers and self.modPointers.mouse
+  if p then p.x, p.y = x, y end
+  if not ModRuntime.wantsHook("input.pointer") then return end
+  self:pointerEvent("moved", "mouse", "mouse", x, y, dx, dy, nil, nil)
+end
+
+function Game:mousereleased(x, y, button, istouch)
+  if istouch then return end
+  local p = self.modPointers and self.modPointers.mouse
+  if not p then return end
+  p.held = (p.held or 1) - 1
+  if p.held <= 0 then self.modPointers.mouse = nil end
+  if ModRuntime.wantsHook("input.pointer") then
+    self:pointerEvent("released", "mouse", "mouse", x, y, 0, 0, nil, button)
+  end
+end
+
+-- Focus/visibility loss and input recovery swallow pointer releases the
+-- same way they swallow key-ups (the hazard Input:reset exists for):
+-- every mod-visible pointer gets a "cancelled" instead of leaving
+-- subscribers waiting on a "released" that can never arrive (#807).
+-- Cleared even when the subscriber is already gone, so no stale record
+-- outlives its mod.
+function Game:cancelPointers()
+  local pointers = self.modPointers
+  if not pointers then return end
+  self.modPointers = nil
+  if not ModRuntime.wantsHook("input.pointer") then return end
+  for id, p in pairs(pointers) do
+    self:pointerEvent("cancelled", p.source, id, p.x, p.y, 0, 0,
+                      p.pressure, p.button)
+  end
 end
 
 -- Point the loader's mod.save backing at this save's modData so per-mod
@@ -784,6 +1176,8 @@ function Game:applyOptions(opts)
   -- returns true when a persisted GBC FX level was cleared on mobile
   local gbcCleared = require("src.render.GBCFX").applyOptions(opts)
   require("src.core.VideoMode").applyOptions(opts)
+  -- Android orientation lock (#592); no-op everywhere else
+  require("src.core.Orientation").applyOptions(opts)
   -- after VideoMode: a faithful-resolution lock is an exact window size, so
   -- it has to be the last word on the window (it drops fullscreen to hold)
   require("src.core.FaithfulRes").applyOptions(opts)
@@ -813,7 +1207,7 @@ function Game:applyOptions(opts)
   if gbcCleared then self:writeOptions() end
 end
 
-function Game:restoreSave(loaded, recovered)
+function Game:restoreSave(loaded, recovered, opts)
   if ModRuntime.wants("save.loading") then
     ModRuntime.emit("save.loading", { raw = loaded })
   end
@@ -839,6 +1233,7 @@ function Game:restoreSave(loaded, recovered)
   self:applyOptions(loaded.options)
   -- saves from before OT/ID stamping: backfill with the player's (after
   -- the scrub, so every mon the stamp loop sees is known)
+  SaveData.repairTradedOtIds(loaded)
   local stamp = require("src.battle.BattleState").stampOT
   for _, mon in ipairs(loaded.party or {}) do stamp(loaded, mon) end
   for _, box in ipairs(loaded.boxes or {}) do
@@ -846,8 +1241,12 @@ function Game:restoreSave(loaded, recovered)
   end
   -- rebuild the state stack from the save
   while self.stack:top() do self.stack:pop() end
+  -- freshBoot threads through from the caller (onContinue and F2 both set
+  -- it); a future caller that doesn't ask for it keeps the ordinary
+  -- crossfade by default.
   self.stack:push(self.overworld, loaded.player.map,
-                  loaded.player.x, loaded.player.y, loaded.player.facing)
+                  loaded.player.x, loaded.player.y, loaded.player.facing,
+                  { via = "boot", freshBoot = opts and opts.freshBoot })
   self.saveReport = report
   if not SaveData.emptyReport(report) then
     -- the report screen is a Screens id so mods (or the ui milestone) own
@@ -866,6 +1265,33 @@ function Game:restoreSave(loaded, recovered)
     ModRuntime.emit("save.loaded",
       { save = loaded, meta = loaded.meta, modsDiff = modsDiff })
   end
+end
+
+-- Reconstruct a previously validated runtime checkpoint without replaying the
+-- ordinary CONTINUE lifecycle. In particular, map onEnter scripts and
+-- save.loading/save.loaded events must not run a second time. Validation,
+-- identity checks and transactional rollback live in Checkpoint.lua.
+function Game:restoreCheckpointSave(loaded)
+  self.save = loaded
+  self:adoptSave(loaded)
+  while self.stack:top() do self.stack:pop() end
+  -- freshBoot unconditionally: Checkpoint.resume (src/core/Checkpoint.lua)
+  -- is this method's only caller, and it is itself gated to the title
+  -- session (isTitleSession).
+  self.stack:push(self.overworld, loaded.player.map,
+                  loaded.player.x, loaded.player.y, loaded.player.facing,
+                  { via = "checkpoint", checkpoint = true, freshBoot = true })
+end
+
+-- Install a reconstructed battle without calling BattleState:enter(), whose
+-- transition, intro queues and battle-start side effects already happened in
+-- the checkpointed timeline.
+function Game:restoreCheckpointBattle(battle)
+  if self.stack:top() ~= self.overworld then
+    error("battle checkpoint requires a reconstructed overworld base", 0)
+  end
+  self.stack.states[#self.stack.states + 1] = battle
+  if battle.resumeCheckpoint then battle:resumeCheckpoint() end
 end
 
 return Game

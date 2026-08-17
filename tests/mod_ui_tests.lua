@@ -282,10 +282,13 @@ local function optGame()
 end
 local om = OptionsMenu.new(optGame())
 local WANT_IDS = { "textSpeed", "animations", "battleStyle", "battleLayout",
+                   "battleFit", "battleBg", "uiLayout",
                    "ruleset", "musicVol", "sfxVol", "musicFilter",
                    "performance", "colors",
-                   "tilt", "gbcfx", "zoom", "voidFill", "videoMode", "fpsCap",
-                   "speed", "mods", "controls" }
+                   "tilt", "gbcfx", "zoom", "voidFill", "videoMode",
+                   "faithfulRes", "fpsCap",
+                   "speedOverworld", "speedBattle", "speedMenu",
+                   "mods", "controls", "dateFormat", "timeFormat" }
 check(#om.rows == #WANT_IDS, "vanilla options row count (plus MODS/CONTROLS)")
 for i, id in ipairs(WANT_IDS) do
   check(om.rows[i].id == id, "options row order: " .. id)
@@ -293,11 +296,11 @@ end
 
 -- ruleset row cycles the sorted non-hidden registry ids showing name
 om.game.save.options.ruleset = "gen1_faithful"
-check(om.rows[5].value(om.game) == "GEN 1", "ruleset row shows record.name")
-om.rows[5].step(om.game, 1)
+check(om.rows[8].value(om.game) == "GEN 1", "ruleset row shows record.name")
+om.rows[8].step(om.game, 1)
 check(om.game.save.options.ruleset == "modern_clean",
   "ruleset row cycles sorted registry ids")
-om.rows[5].step(om.game, 1)
+om.rows[8].step(om.game, 1)
 check(om.game.save.options.ruleset == "gen1_faithful",
   "hidden rulesets are excluded from the cycle")
 
@@ -316,41 +319,42 @@ check(om.game.save.options.battleLayout == "wide", "battle layout flips to WIDE"
 check(om.rows[4].value(om.game) == "WIDE", "the WIDE layout renders its label")
 om.rows[4].step(om.game, 1)
 check(om.game.save.options.battleLayout == "og", "battle layout flips back")
-om.rows[6].step(om.game, -1)
+om.rows[9].step(om.game, -1)
 check(om.game.save.options.musicVol == 6, "music volume steps down")
-for _ = 1, 10 do om.rows[6].step(om.game, -1) end
+for _ = 1, 10 do om.rows[9].step(om.game, -1) end
 check(om.game.save.options.musicVol == 0, "music volume clamps at 0")
 
--- ZOOM / VOID FILL rows (indices shifted +1 by the PERFORMANCE row spliced
--- in ahead of COLORS)
+-- ZOOM / VOID FILL rows (indices track WANT_IDS above; the battle
+-- composition rows -- BATTLE SIZE / BATTLE BG / UI LAYOUT -- sit ahead of
+-- RULESET, and FAITHFUL RATIO lands between VIDEO MODE and MAX FPS)
 local Zoom = require("src.render.Zoom")
 local TileRenderer = require("src.render.TileRenderer")
 om.game.save.options.zoom = 0
 Zoom.offset = 0
-check(om.rows[13].value(om.game) == "FIT", "ZOOM row shows FIT at offset 0")
-om.rows[13].step(om.game, 1)
+check(om.rows[16].value(om.game) == "FIT", "ZOOM row shows FIT at offset 0")
+om.rows[16].step(om.game, 1)
 check(om.game.save.options.zoom == 1 and Zoom.offset == 1,
   "ZOOM row steps to IN1")
-om.rows[14].step(om.game, 1)
+om.rows[17].step(om.game, 1)
 check(om.game.save.options.voidFill == "water"
       and TileRenderer.voidFill == "water",
   "VOID FILL row cycles TREES → WATER")
-om.rows[14].step(om.game, 1)
+om.rows[17].step(om.game, 1)
 check(om.game.save.options.voidFill == "black", "VOID FILL steps to BLACK")
-om.rows[14].step(om.game, 1)
+om.rows[17].step(om.game, 1)
 check(om.game.save.options.voidFill == "trees", "VOID FILL wraps to TREES")
 
 -- the MAX FPS row cycles the render-cap steps and shows the value plain
 om.game.save.options.fpsCap = nil
-check(om.rows[16].value(om.game) == "60",
+check(om.rows[20].value(om.game) == "60",
   "MAX FPS row defaults to 60 with no saved cap")
-om.rows[16].step(om.game, 1)
+om.rows[20].step(om.game, 1)
 check(om.game.save.options.fpsCap == 75, "MAX FPS steps up from 60 to 75")
-check(om.rows[16].value(om.game) == "75", "the MAX FPS row renders the cap")
+check(om.rows[20].value(om.game) == "75", "the MAX FPS row renders the cap")
 om.game.save.options.fpsCap = 160
-om.rows[16].step(om.game, 1)
+om.rows[20].step(om.game, 1)
 check(om.game.save.options.fpsCap == 30, "MAX FPS wraps past the ceiling to 30")
-om.rows[16].step(om.game, -1)
+om.rows[20].step(om.game, -1)
 check(om.game.save.options.fpsCap == 160, "MAX FPS wraps back down to the ceiling")
 
 -- ------- FrameCap normalize / cycle (issue #88)
@@ -380,7 +384,7 @@ check(FrameCap.current == 60, "FrameCap.applyOptions defaults a missing key to 6
 -- the MODS row is the manager's discoverable home
 local mgGame = optGame()
 om = OptionsMenu.new(mgGame)
-om.rows[18].activate(mgGame)
+om.rows[24].activate(mgGame)
 check(getmetatable(mgGame.stack:top()) == ManagerState,
   "the MODS row opens the manager")
 check(mgGame.stack:top().screenId == "ManagerState",
@@ -390,7 +394,7 @@ check(mgGame.stack:top().screenId == "ManagerState",
 local BindingsMenu = require("src.ui.BindingsMenu")
 local cbGame = optGame()
 om = OptionsMenu.new(cbGame)
-om.rows[19].activate(cbGame)
+om.rows[25].activate(cbGame)
 local bm = cbGame.stack:top()
 check(getmetatable(bm) == BindingsMenu,
   "the CONTROLS row opens the rebind list")
@@ -404,6 +408,23 @@ check(bm.items[1].label == "UP" and bm.items[1].right == "UP/D-UP"
   "with no rebind the rows mirror the fixed map, key and pad both (#589)")
 check(cbGame.save.options.bindings == nil,
   "opening the screen alone writes nothing")
+
+-- shared date/time presentation stays in options.lua and is available to
+-- engine UI and mods without becoming checkpoint progress
+om.game.save.options.dateFormat = "device"
+om.game.save.options.timeFormat = "device"
+check(om.rows[26].value(om.game) == "DEVICE",
+  "DATE FORMAT defaults to device locale")
+om.rows[26].step(om.game, 1)
+check(om.game.save.options.dateFormat == "dmy"
+      and om.rows[26].value(om.game) == "DD-MM-YYYY",
+  "DATE FORMAT exposes deterministic DMY override")
+check(om.rows[27].value(om.game) == "DEVICE",
+  "TIME FORMAT defaults to device locale")
+om.rows[27].step(om.game, 1)
+check(om.game.save.options.timeFormat == "24h"
+      and om.rows[27].value(om.game) == "24 HOUR",
+  "TIME FORMAT exposes deterministic 24-hour override")
 check(bm.onKeyPressed == nil and bm.onGamepadPressed == nil,
   "no raw-input claim until a capture is armed")
 press(bm, "a")
@@ -435,9 +456,12 @@ local Input = require("src.core.Input")
 local gpGame = { stack = newStack() }
 local sawPad
 gpGame.stack:push({ onGamepadPressed = function(_, b) sawPad = b end })
+-- gamepadpressed reads Input:isDown("select") for the display-chord and
+-- shoulder-hotkey gates before it routes to the capturing state, so the
+-- button state table must exist first
+Input:init()
 Game.gamepadpressed(gpGame, nil, "y")
 check(sawPad == "y", "pad buttons reach a capturing top state")
-Input:init()
 gpGame.stack:pop()
 Game.gamepadpressed(gpGame, nil, "a")
 Input:step()
@@ -510,6 +534,21 @@ check(#pm.subItems == 2, "a non-table submenu result keeps the vanilla list")
 hooks:removeOwner("bad")
 pm.submenu = nil
 
+-- ------- #768: the party cursor persists until a battle
+-- (PartyMenuInit reads wPartyAndBillsPCSavedMenuItem, HandlePartyMenuInput
+-- writes it back; InitBattleVariables / end_of_battle.asm zero it)
+pgame.save.party[2] = { species = "PIKACHU", hp = 10, stats = { hp = 10 },
+                        level = 5, moves = { { id = "TACKLE" } } }
+press(pm, "down")
+check(pgame.partyMenuSavedIndex == 2, "the party cursor is saved on move")
+local pm2 = PartyMenu.new(pgame)
+check(pm2.index == 2, "reopening the party menu keeps the cursor (#768)")
+pgame.save.party[2] = nil
+check(PartyMenu.new(pgame).index == 1,
+  "a shrunken party clamps the saved cursor back into range")
+pgame.partyMenuSavedIndex = nil -- a battle clears it (InitBattleVariables)
+check(PartyMenu.new(pgame).index == 1, "a battle resets the party cursor")
+
 -- ------- battle PKMN: SWITCH / STATS / CANCEL (#180)
 local switched
 local bgame = partyGame()
@@ -545,7 +584,9 @@ check(not fpm.submenu and forced == fgame.save.party[1],
 -- ------- issues #320/#385: the STRENGTH texts print over the party menu
 do
   local owStub = { strengthActive = false,
-                   map = { def = { tileset = "OVERWORLD" } }, dark = false }
+                   map = { def = { tileset = "OVERWORLD" } }, dark = false,
+                   partyKnows = function(self, id) return self.knows == id end,
+                   knows = "STRENGTH" }
   local sgame = partyGame()
   sgame.overworld = owStub
   sgame.data.text = {} -- the strength texts fall back to Strings sources
@@ -555,9 +596,9 @@ do
   pm.game = sgame
   sgame.stack:push(pm)
   press(pm, "a") -- open the submenu
-  check(pm.subItems[#pm.subItems].action == "strength",
-    "the strength row is listed with badge + move")
-  pm.subIndex = #pm.subItems
+  check(pm.subItems[1].action == "strength",
+    "the strength row is listed with badge + move, above STATS/SWITCH (#768)")
+  pm.subIndex = 1
   press(pm, "a") -- run STRENGTH
   local states = sgame.stack.states
   check(#states == 2 and states[1] == pm and states[2].pages ~= nil,
@@ -679,8 +720,14 @@ do
 end
 
 -- issue #133: title menu / continue overlays must not inherit LOGO2/LOGO1
--- (blue/red UI ink).  A trailing trueColor zone covers the overlay box.
+-- (blue/red UI ink).  A trailing GRAYS zone covers the overlay box: through
+-- the shade-remap shader it is the identity for the box's DMG shades, so
+-- pass-through modes keep #133's white paper / black ink, while the mono
+-- and inverted display modes still recolor it with the rest of the screen
+-- (a trueColor rect skipped the shader and left a raw white hole over a
+-- CLASSIC pea-green title, #870).
 do
+  local PaletteFX = require("src.render.PaletteFX")
   local logo2 = {
     { 255, 255, 255 }, { 230, 197, 0 }, { 148, 156, 148 }, { 41, 99, 181 },
   }
@@ -709,8 +756,8 @@ do
   menu.titleUiBox = { 0, 0, 12, 3 }
   game.stack:push(menu)
   local withMenu = TitleState.sgbPalettes(title, game)
-  check(withMenu and #withMenu == 4 and withMenu[4].colors == false,
-        "title menu adds a trueColor overlay zone")
+  check(withMenu and #withMenu == 4 and withMenu[4].colors == PaletteFX.GRAYS,
+        "title menu adds a DMG-grays overlay zone (#870)")
   check(withMenu[4].x == 0 and withMenu[4].y == 0
         and withMenu[4].w == 13 * 8 and withMenu[4].h == 4 * 8,
         "menu overlay covers the CONTINUE/NEW GAME box")
@@ -718,8 +765,8 @@ do
   game.stack:pop()
   game.stack:push({ titleUiBox = { 4, 7, 19, 16 } })
   local withCont = TitleState.sgbPalettes(title, game)
-  check(withCont and #withCont == 4 and withCont[4].colors == false,
-        "continue-info overlay adds a trueColor zone")
+  check(withCont and #withCont == 4 and withCont[4].colors == PaletteFX.GRAYS,
+        "continue-info overlay adds a DMG-grays zone (#870)")
   check(withCont[4].x == 4 * 8 and withCont[4].y == 7 * 8
         and withCont[4].w == 16 * 8 and withCont[4].h == 10 * 8,
         "continue overlay matches DisplayContinueGameInfo's box")
@@ -779,8 +826,9 @@ check(oak.demoSpecies == "NIDORINO" and oak.nameLen == 7,
 
 -- ------- intro.oak_speech.build
 local vanillaSteps = OakSpeech.defaultSteps(oak)
-check(#vanillaSteps == 9, "vanilla speech has nine steps")
-check(vanillaSteps[1].id == "oak_welcome" and vanillaSteps[9].id == "shrink",
+check(#vanillaSteps == 11, "vanilla speech has eleven steps")
+check(vanillaSteps[1].id == "oak_welcome"
+  and vanillaSteps[#vanillaSteps].id == "shrink",
   "vanilla speech anchors start and end")
 
 hooks:wrap("intro.oak_speech.build", function(nextFn, steps, speech)
@@ -799,7 +847,7 @@ hooks:removeOwner("fixture")
 
 hooks:wrap("intro.oak_speech.build", function() return 42 end, 0, "bad")
 built = oak:buildSteps()
-check(#built == 9 and built[1].id == "oak_welcome",
+check(#built == #vanillaSteps and built[1].id == "oak_welcome",
   "a non-table intro.oak_speech.build result degrades to vanilla")
 check(logged("intro.oak_speech.build returned"),
   "the intro build degrade is logged")
@@ -971,8 +1019,10 @@ press(ms, "select")
 check(avail[1].enabled == false, "SELECT quick-toggles the focused mod")
 check(ms:isStaged(avail[1]), "a flip against boot state is staged")
 check(ms:glyphFor(avail[1]) == ".", "staged mods show the staged glyph")
-check(mgame.save.options.mods.badmod == false,
-  "the live options table mirrors the flip")
+local managerScope = ms:enableScope()
+check(managerScope and mgame.save.options.modsByVersion
+  and mgame.save.options.modsByVersion[managerScope].badmod == false,
+  "the live options table mirrors the flip for this game")
 check(ms.restartPending, "staged changes arm the apply screen")
 ms:discardChanges()
 check(avail[1].enabled == true and not ms.restartPending,
@@ -1056,6 +1106,27 @@ check(loader.modOptions.okmod.hardcore == false
   and loader.modOptions.okmod.startMoney == 3000
   and loader.modOptions.okmod.tag == "BLUE",
   "RESET DEFAULTS restores every schema default")
+
+-- optional conditions keep mode-specific rows compact and refresh in place
+local conditionalSchema = {
+  { key = "mode", label = "MODE", type = "choice", default = "one",
+    choices = { { "ONE", "one" }, { "TWO", "two" } } },
+  { key = "oneOnly", label = "ONE ONLY", type = "toggle", default = false,
+    visible_if = { key = "mode", equals = "one" } },
+  { key = "twoOnly", label = "TWO ONLY", type = "toggle", default = false,
+    visible_if = { key = "mode", equals = "two" } },
+  { key = "notOne", label = "NOT ONE", type = "toggle", default = false,
+    visible_if = { key = "mode", not_equals = "one" } },
+}
+loader.modOptions.condmod = {}
+ms.cursor = 1
+ms.optionRows = ms:buildOptionRows({ id = "condmod" }, conditionalSchema)
+check(#ms.optionRows == 3 and ms.optionRows[2].id == "oneOnly",
+  "visible_if uses the controlling row default")
+ms.optionRows[1].step(mgame, 1)
+check(#ms.optionRows == 4 and ms.optionRows[2].id == "twoOnly"
+  and ms.optionRows[3].id == "notOne" and ms.cursor == 1,
+  "editing a controller refreshes conditions without moving the cursor")
 press(ms, "b")
 check(ms.screen == "list", "B leaves the options screen")
 
@@ -1113,6 +1184,18 @@ check(#seedOpts.modProfiles == 1 and seedOpts.modProfiles[1].name == "PROFILE 1"
 seedOpts.modProfiles = {}
 ModProfile.ensureFirst(seedOpts, ms.status.available, {})
 check(#seedOpts.modProfiles == 0, "seeding never runs twice")
+
+local LauncherMods = require("src.mods.LauncherMods")
+local testProfOpts = { activeProfile = "P1", modProfiles = { { name = "P1", enabled = { a = true } } } }
+local dupSnap = LauncherMods.duplicateProfile("P1", testProfOpts)
+check(dupSnap and dupSnap.name == "P1 (Copy)" and testProfOpts.activeProfile == "P1 (Copy)",
+  "duplicateProfile creates P1 (Copy) and activates it")
+check(LauncherMods.renameProfile("P1 (Copy)", "RenamedP", testProfOpts) == true,
+  "renameProfile renames active profile")
+check(testProfOpts.activeProfile == "RenamedP", "activeProfile updates on rename")
+check(LauncherMods.deleteProfile("RenamedP", testProfOpts) == true, "deleteProfile removes profile")
+check(#testProfOpts.modProfiles == 1 and testProfOpts.modProfiles[1].name == "P1", "only original profile remains")
+check(testProfOpts.activeProfile == "P1", "activeProfile falls back to remaining profile")
 
 -- permissions rows
 local permy = manifest("permy", { permissions = { "network" } })

@@ -134,6 +134,10 @@ function Commands.show_text(ctx, textId, subs, extraOpts)
       opts[k] = v
     end
   end
+  -- MONEY_BOX (engine/menus/text_box.asm:133) reads the live wallet
+  if opts and opts.money == true then
+    opts.money = function() return ctx.save.money end
+  end
   ctx.game.stack:push(TextBox.new(ctx.game, text, function()
     runner:resume()
   end, opts))
@@ -260,15 +264,76 @@ function Commands.take_item(ctx, itemId, count)
   if inv[itemId] == 0 then inv[itemId] = nil end
 end
 
+-- save_end_battle_text <TEXT_KEY>: SaveEndBattleTextPointers
+-- (home/trainers.asm, called from e.g. RocketHideoutB4FScript10 just before
+-- wCurOpponent is set).  The armed line is the trainer's OWN loss line and
+-- belongs on the battle screen: PrintEndBattleText (home/trainers.asm) runs
+-- from TrainerBattleVictory (engine/battle/core.asm) after
+-- TrainerDefeatedText and the pic scroll but BEFORE MoneyForWinningText, and
+-- TrainerEndBattleText prints _TrainerNameText first so the line opens with
+-- the "CLASS: " tag.  Scripts that printed it with a plain show_text after
+-- start_battle got it a box too late -- after the payout -- and untagged
+-- (#866).  Arms exactly one battle; start_battle consumes it.
+function Commands.save_end_battle_text(ctx, textId)
+  local text = ctx.game.data.text[textId]
+  if not text and ctx.overworld then
+    text = ctx.game.data:resolveText(ctx.overworld.map.def.label, textId)
+  end
+  -- BattleState takes finished text, so expand {PLAYER}/{RIVAL} here the
+  -- way OverworldState:engageTrainer does for the sight/talk path
+  ctx.endBattleText = TextBox.substitute(ctx.game, text or textId)
+end
+
+-- Route scripted battles through the standard entry transition. In the
+-- originals, InitWildBattle (engine/battle/init_battle.asm) always calls
+-- DoBattleTransitionAndInitBattleVariables (engine/battle/core.asm), with
+-- no old-man or Pikachu-demo exception; BattleTransition then selects the
+-- wipe for the battle kind. Some tests provide only a partial overworld
+-- double, so retain a logged fallback even though it skips the transition
+-- and battle music.
+function Commands.pushBattle(ctx, battle)
+  if ctx.overworld and ctx.overworld.pushBattle then
+    ctx.overworld:pushBattle(battle)
+  else
+    Logger.warn("pushBattle: no overworld:pushBattle, skipping the transition wipe")
+    ctx.game.stack:push(battle)
+  end
+end
+
 -- start_battle "wild" species level | start_battle "trainer" OPP_CLASS partyIndex
 function Commands.start_battle(ctx, kind, a, b)
   local BattleState = require("src.battle.BattleState")
   local runner = ctx.runner
+  local resumed = ctx.resumeBattle
+  if resumed then
+    ctx.resumeBattle = nil
+    local result, restoredBattle = resumed.result, resumed.battle
+    ctx.lastBattleResult = result
+    ctx.lastCheck = result == "win"
+    if ctx.overworld then
+      if result == "win" then
+        ctx.afterScript = ctx.afterScript or {}
+        table.insert(ctx.afterScript, function()
+          ctx.overworld:afterBattle(result, restoredBattle)
+        end)
+      else
+        ctx.overworld:afterBattle(result, restoredBattle)
+      end
+    end
+    return
+  end
   local battle
   if kind == "wild" then
     battle = BattleState.newWild(ctx.game, a, b)
   else
     battle = BattleState.newTrainer(ctx.game, a, b)
+  end
+  -- one SaveEndBattleTextPointers arms one battle; leaving it set would leak
+  -- the line into the next scripted fight
+  battle.endBattleText, ctx.endBattleText = ctx.endBattleText, nil
+  if runner and runner.battleCheckpointOrigin then
+    battle.checkpointOrigin = runner:battleCheckpointOrigin(battle)
+    if battle.checkpointOrigin then runner.checkpointBattle = battle end
   end
   battle.onFinish = function(result)
     ctx.lastBattleResult = result
@@ -289,19 +354,8 @@ function Commands.start_battle(ctx, kind, a, b)
     end
     runner:resume()
   end
-  -- Every battle enters through the transition wipe, script-driven ones
-  -- included: BattleTransition (engine/battle/battle_transitions.asm:1) runs
-  -- from DoBattleTransitionAndInitBattleVariables for all of them, and
-  -- GetBattleTransitionID_WildOrTrainer picks the style from the battle kind.
-  -- Pushing the BattleState straight onto the stack skipped the wipe
-  -- entirely, so every scripted trainer -- gym leaders, the rival, Giovanni --
-  -- and every scripted wild battle simply cut to the battle screen.  The
-  -- trainer-sight path already went through pushBattle; this one did not.
-  if ctx.overworld and ctx.overworld.pushBattle then
-    ctx.overworld:pushBattle(battle)
-  else
-    ctx.game.stack:push(battle)
-  end
+  -- A direct stack push would skip the battle-entry transition.
+  Commands.pushBattle(ctx, battle)
   runner:yield()
 end
 
@@ -476,6 +530,22 @@ function Commands.set_field(ctx, key, value)
   ctx.save[key] = value
 end
 
+function Commands.load_player_starter_name(ctx)
+  local flags = ctx.save.flags or {}
+  local species = flags.EVENT_CHOSE_PIKACHU and "PIKACHU"
+    or flags.EVENT_CHOSE_CHARMANDER and "CHARMANDER"
+    or flags.EVENT_CHOSE_SQUIRTLE and "SQUIRTLE"
+    or flags.EVENT_CHOSE_BULBASAUR and "BULBASAUR"
+    or (ctx.save.party and ctx.save.party[1] and ctx.save.party[1].species)
+  local def = species and ctx.game.data.pokemon[species]
+  ctx.game.stringBuffer = def and def.name or species or ""
+end
+
+function Commands.spawn_pikachu_follower(ctx)
+  require("src.world.PikachuFollower").onMapEntered(
+    ctx.game, ctx.overworld, nil, false)
+end
+
 local function toggleObject(ctx, mapId, objName, visible)
   local save = ctx.save
   save.objectToggles = save.objectToggles or {}
@@ -524,6 +594,17 @@ end
 
 function Commands.play_sound(ctx, soundId)
   require("src.core.Sound").play(ctx.game.data, soundId)
+end
+
+-- text_sound <soundId>: the jingle the ROM parks at the END of a string as
+-- a trailing text command (sound_get_item_1, sound_get_key_item ->
+-- home/text.asm TextCommand_SOUND).  It arms the NEXT show_text the same
+-- way play_cry arms ctx.pendingCry, so the fanfare fires once the last page
+-- has typed and the box holds on WaitForSoundToFinish before the button
+-- wait.  play_sound stays the bare PlaySound used for the non-blocking
+-- beats (Bill's teleporter, the S.S. Anne horn).
+function Commands.text_sound(ctx, soundId)
+  ctx.textOpts = TextBox.soundOpts(ctx.game, soundId, ctx.textOpts)
 end
 
 -- play_once <songId>: one-shot jingle (Music_PkmnHealed, etc.); blocks
@@ -638,9 +719,8 @@ end
 -- AskName runs for party (AddPartyMon) and box (SendNewMonToBox) when a
 -- script runner is present; mods that pre-set gift.nickname skip it.
 -- Box deposits also print SentToBoxText (give_pokemon.asm:36-37).
--- skipNickname suppresses the AskName prompt: Yellow's lab Pikachu is
--- added straight through AddPartyMon (pokeyellow scripts/OaksLab.asm
--- OaksLabPlayerReceivedMonText) -- the starter Pikachu keeps its name.
+-- skipNickname suppresses AskName for callers that name the gift themselves;
+-- no vanilla script uses it (pokeyellow scripts/OaksLab.asm, #1013)
 function Commands.give_pokemon(ctx, species, level, skipNickname)
   -- Native mods can transform a gift before the Pokémon object is created.
   -- This is intentionally an event rather than a special-case starter hook:
@@ -702,6 +782,16 @@ end
 
 function Commands.give_money(ctx, amount)
   ctx.save.money = math.max(0, ctx.save.money + amount)
+end
+
+-- check_money <amount>: HasEnoughMoney (home/money.asm:1)
+function Commands.check_money(ctx, amount)
+  ctx.lastCheck = (ctx.save.money or 0) >= (amount or 0)
+end
+
+-- take_money <amount>: SubBCDPredef (engine/math/bcd.asm:193)
+function Commands.take_money(ctx, amount)
+  ctx.save.money = math.max(0, (ctx.save.money or 0) - (amount or 0))
 end
 
 -- Point LAST_MAP exits at an outdoor door (pokered wLastMap).  Keeps the
@@ -784,22 +874,19 @@ end
 -- The Viridian old man's catch tutorial (scripts/ViridianCity.asm
 -- BATTLE_TYPE_OLD_MAN): a demo wild battle where the old man throws
 -- one POKé BALL; nothing is kept.
-function Commands.old_man_demo(ctx)
+-- `outcome` == "fail" is Yellow's initial training: ItemUseBall's
+-- .oldManBattle branch reads EVENT_INITIAL_CATCH_TRAINING and stores anim
+-- data $63, so the ball shakes three times and breaks open (pokeyellow
+-- engine/items/item_effects.asm).  Red, Blue and Yellow's repeat "Watch
+-- closely!" demo all catch, and all of them omit the argument (#636).
+function Commands.old_man_demo(ctx, outcome)
   local BattleState = require("src.battle.BattleState")
   local runner = ctx.runner
   local om = ctx.game.data.field.oldManBattle or { species = "WEEDLE", level = 5 }
   local battle = BattleState.newWild(ctx.game, om.species, om.level)
-  battle:makeOldManDemo()
+  battle:makeOldManDemo(nil, outcome == "fail")
   battle.onFinish = function() runner:resume() end
-  -- InitWildBattle calls DoBattleTransitionAndInitBattleVariables
-  -- unconditionally (core.asm:6699) -- there is no BATTLE_TYPE_OLD_MAN
-  -- special case -- so the catch tutorial gets the wipe like any other
-  -- wild battle
-  if ctx.overworld and ctx.overworld.pushBattle then
-    ctx.overworld:pushBattle(battle)
-  else
-    ctx.game.stack:push(battle)
-  end
+  Commands.pushBattle(ctx, battle)
   runner:yield()
 end
 
@@ -988,8 +1075,10 @@ function Commands.trade(ctx, tradeIndex, doneFlag)
     onDone = function() runner:resume() end,
   })
   runner:yield()
-  -- TradedForText (sound_get_key_item) then the dialogset's thanks
-  require("src.core.Sound").play(data, "Get_Key_Item")
+  -- TradedForText carries sound_get_key_item after the text, so the jingle
+  -- rides the box and blocks it (home/text.asm TextCommand_SOUND), then the
+  -- dialogset's thanks
+  Commands.text_sound(ctx, "Get_Key_Item")
   say(texts.tradedFor or "_TradedForText")
   say(texts.thanks or "_Thanks" .. dialogset .. "Text")
 end
@@ -1069,10 +1158,23 @@ function Commands.march_in_place(ctx, objIndex, on)
   ow.marchers[npc] = on and true or nil
 end
 
+-- pikachu_make_way: callfar OaksLabPikachuMovementScript (pokeyellow
+-- scripts/OaksLab_2.asm); a no-op without a Yellow follower (#1021)
+function Commands.pikachu_make_way(ctx)
+  local ow = ctx.overworld
+  if not ow then return end
+  local runner = ctx.runner
+  local started = require("src.world.PikachuFollower")
+    .oaksLabMakeWay(ctx.game, ow, function() runner:resume() end)
+  if started then runner:yield() end
+end
+
 -- play_music <songId> [opts]: switch map music now; opts.keep marks it
--- to survive the next warp (the story files' keepMusic idiom)
+-- to survive the next warp (the story files' keepMusic idiom).
+-- opts.tempo is the Music_*AlternateTempo override (audio/alternate_tempo.asm
+-- re-points channel 1 at a stub that only changes the song's `tempo`) (#847).
 function Commands.play_music(ctx, songId, opts)
-  require("src.core.Music").play(ctx.game.data, songId)
+  require("src.core.Music").play(ctx.game.data, songId, nil, opts)
   if opts and opts.keep and ctx.overworld then
     ctx.overworld.keepMusicOnce = true
   end
@@ -1080,6 +1182,15 @@ end
 
 function Commands.stop_music(ctx)
   require("src.core.Music").stop()
+end
+
+-- fade_music [control]: FadeOutAudio (home/fade_audio.asm) -- ramp the
+-- current song to silence over 7 * control frames and stop it, the way
+-- Music_Cities1AlternateTempo does before it restarts Cities1 (#847).
+-- Non-blocking, like the ROM's write to wAudioFadeOutControl: pair it with
+-- the `wait` that stands in for the following DelayFrames.
+function Commands.fade_music(ctx, control)
+  require("src.core.Music").fadeOut(control or 10)
 end
 
 -- play_default_music: PlayDefaultMusic -- resume the current map's own
@@ -1318,7 +1429,7 @@ for _, verb in ipairs({ "show_text", "ask", "choice", "start_battle", "warp",
     "old_man_demo", "static_battle", "rival_battle", "give_item",
     "give_pokemon", "wait",
     "wait_flag", "move_player", "move_npc", "move_npc_to", "walk_npc",
-    "emote", "fade", "pan_camera", "play_once" }) do
+    "emote", "fade", "pan_camera", "play_once", "pikachu_make_way" }) do
   local meta = Commands.meta[verb] or {}
   Commands.meta[verb] = meta
   meta.blocking = true

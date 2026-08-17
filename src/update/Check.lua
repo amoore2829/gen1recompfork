@@ -8,15 +8,16 @@
 --   "update_check_state" worker -> main: { status, latest, progress, error }
 --
 -- Nothing here ever blocks or throws into the game loop: when love.thread is
--- absent (the headless test stub) or the worker cannot run (no curl, Android),
--- state() simply reports "error" and the UI hides itself.  See the shared
--- contract in the task brief for the status vocabulary and the file layout.
+-- absent (the headless test stub) or the worker cannot run, state() reports
+-- "error" (or the worker reports "needs_full" when there is no transport).
+-- See the shared contract in the task brief for the status vocabulary.
 --
 -- The release-JSON extraction and the sums parsing are exported as pure
 -- functions (no love.* calls) so plain-Lua tests can cover them, and so the
 -- worker can reuse the exact same code path via love.filesystem.load.
 
 local Check = {}
+local Platform = require("src.core.Platform")
 
 Check.REPO = "bryanthaboi/gen1recomp"
 
@@ -51,8 +52,13 @@ end
 -- falls back to require.
 function Check.parseRelease(jsonText, Json)
   Json = Json or require("src.link.Json")
-  local doc = Json.decode(jsonText)
-  if type(doc) ~= "table" or not doc.tag_name then
+  local notJson = Json.describeUnexpected(jsonText)
+  if notJson then return nil, notJson end
+  local doc, decodeErr = Json.decode(jsonText)
+  if type(doc) ~= "table" then
+    return nil, decodeErr or "no tag_name in release json"
+  end
+  if not doc.tag_name then
     return nil, "no tag_name in release json"
   end
   local version = stripV(doc.tag_name)
@@ -65,6 +71,9 @@ function Check.parseRelease(jsonText, Json)
     payloadName = payloadName,
     payload = Check.pickAsset(doc.assets, payloadName),
     sums = Check.pickAsset(doc.assets, "sha256sums.txt"),
+    -- GitHub release body: already fetched with the update check, shown by
+    -- the launcher's Patch notes footer button.
+    notes = type(doc.body) == "string" and doc.body or "",
   }
 end
 
@@ -99,6 +108,10 @@ local cache = { status = "idle" } -- newest snapshot from the worker
 
 local function ensureWorker()
   if workerReady ~= nil then return workerReady end
+  if not Platform.networkValidated() then
+    workerReady = false
+    return false
+  end
   if not (love and love.thread and love.thread.newThread) then
     workerReady = false
     return false
@@ -125,6 +138,10 @@ local function drain()
   if stateCh then
     local msg = stateCh:pop()
     while msg do
+      if type(msg) == "table" and type(msg.notes) ~= "string"
+          and type(cache.notes) == "string" then
+        msg.notes = cache.notes
+      end
       cache = msg
       msg = stateCh:pop()
     end
@@ -138,21 +155,22 @@ local function drain()
 end
 
 -- Begin (or, on a prior error, retry) an async check.  Safe to call every frame:
--- once a check is in flight or has reached a terminal state it is a no-op.
-function Check.start()
+-- once a check is in flight or has reached a terminal state it is a no-op unless
+-- force=true is passed (e.g. from an explicit button press).
+function Check.start(force)
   drain()
   if cache.status == "checking" or cache.status == "downloading" then return end
-  if requested and cache.status ~= "error" and cache.status ~= "idle" then return end
+  if not force and requested and cache.status ~= "error" and cache.status ~= "idle" then return end
   if not ensureWorker() then
     cache = { status = "error", error = "background threads unavailable" }
     return
   end
   requested = true
-  cache = { status = "checking" }
+  cache = { status = "checking", notes = cache.notes, latest = cache.latest }
   cmdCh:push({ cmd = "check" })
 end
 
--- Current snapshot: { status, latest, progress, error }.  status is one of
+-- Current snapshot: { status, latest, progress, error, notes }.  status is one of
 -- idle | checking | uptodate | available | downloading | ready | needs_full | error.
 function Check.state()
   drain()
@@ -161,6 +179,7 @@ function Check.state()
     latest = cache.latest,
     progress = cache.progress,
     error = cache.error,
+    notes = cache.notes,
   }
 end
 
@@ -170,7 +189,8 @@ function Check.download()
   drain()
   if not cmdCh then return end
   if cache.status ~= "available" then return end
-  cache = { status = "downloading", latest = cache.latest, progress = 0 }
+  cache = { status = "downloading", latest = cache.latest, progress = 0,
+    notes = cache.notes }
   cmdCh:push({ cmd = "download" })
 end
 

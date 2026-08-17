@@ -18,7 +18,7 @@ local GameSpeed = {}
 -- attempt is long enough that the iteration loop, not the engine, is the
 -- bottleneck. Vsync caps how much a real frame can do, so past 10X the
 -- multiplier is increasingly a ceiling rather than a rate.
-GameSpeed.LEVELS = { 1, 2, 4, 10, 20, 30, 50, 75, 100,200 }
+GameSpeed.LEVELS = { 1, 2, 3, 4, 10, 20, 30, 50, 75, 100, 200 }
 GameSpeed.DEFAULT = 1
 
 function GameSpeed.levelLabel(v)
@@ -49,6 +49,21 @@ function GameSpeed.cycle(v, dir)
   end
   local nextIdx = (cur - 1 + (dir or 1)) % #levels + 1
   return levels[nextIdx]
+end
+
+-- Per-category speed (RFC 0007): overworld walking, battle turns and menu
+-- navigation each cycle their own multiplier instead of one global "speed"
+-- value. This list is the single source of truth for which categories
+-- exist and the order the Options rows/save.options keys follow;
+-- Game.lua's stack-walk (Game.speedCategoryInStack) decides WHICH category
+-- is active on a given frame, this module only knows the category names.
+GameSpeed.CATEGORIES = { "overworld", "battle", "menu" }
+
+-- the save.options field name a category's multiplier lives under, e.g.
+-- "overworld" -> "speedOverworld". Centralized so Game.lua, OptionsMenu.lua,
+-- LauncherSettings.lua and the SaveData migration never hand-spell the key.
+function GameSpeed.optionKey(category)
+  return "speed" .. category:sub(1, 1):upper() .. category:sub(2)
 end
 
 return GameSpeed

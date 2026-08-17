@@ -11,9 +11,16 @@
 --
 -- Draws in full window LOVE units -- the same space TouchControls uses
 -- after Renderer:endFrame -- so what you drag here is what you get in play.
+--
+-- Switch / gamepad: PadCursor draws the virtual pointer the launcher just
+-- dropped (same soft-lock class as the save editor).  A clicks / drags, B
+-- closes (Done), shoulders nudge button size.
 
 local SaveData = require("src.core.SaveData")
 local TouchControls = require("src.core.TouchControls")
+local TouchSkin = require("src.core.TouchSkin")
+local PadCursor = require("src.ui.PadCursor")
+local GamepadMap = require("src.core.GamepadMap")
 
 local Editor = {}
 
@@ -40,44 +47,122 @@ local function roundRect(mode, x, y, w, h, r)
   love.graphics.rectangle(mode, x, y, w, h, r, r)
 end
 
+local function fitText(font, text, maxW)
+  text = tostring(text)
+  if maxW <= 0 or font:getWidth(text) <= maxW then return text end
+  while #text > 1 and font:getWidth(text .. "...") > maxW do
+    text = text:sub(1, #text - 1)
+  end
+  return text .. "..."
+end
+
 function Editor.load(opts)
   opts = opts or {}
   Editor.onClose = opts.onClose
+  Editor.version = opts.version
+  Editor.hostPoll = opts.hostPoll == true
   Editor.drag = nil
   Editor.rects = {}
+  Editor._closed = false
+  Editor._hostMouse = false
+  Editor._hostTouches = nil
   Editor.fonts = {
     title = love.graphics.newFont(28),
     body = love.graphics.newFont(16),
     btn = love.graphics.newFont(18),
   }
   local optsTbl = SaveData.loadOptions()
+  local applied = optsTbl
+  if opts.version == "gold" then
+    local gold = type(optsTbl.gold) == "table" and optsTbl.gold or {}
+    applied = {
+      touchControls = gold.touchControls,
+      haptics = gold.haptics or optsTbl.haptics,
+    }
+  end
   TouchControls:init()
   TouchControls:ensureImages()
-  TouchControls:applyOptions(optsTbl)
+  TouchControls:applyOptions(applied)
   TouchControls:setPreview(true)
   Editor.enabled = TouchControls.enabled ~= false
+  Editor.skins = TouchSkin.list()
+  Editor.exportMsg = nil
+  PadCursor.reset()
+end
+
+function Editor.skinIndex()
+  for i, entry in ipairs(Editor.skins or {}) do
+    if entry.id == TouchControls.skinId then return i + 1 end
+  end
+  return 1
+end
+
+function Editor.skinLabel()
+  local entry = (Editor.skins or {})[Editor.skinIndex() - 1]
+  if not entry then return "Built-in pad" end
+  local skin = TouchSkin.active
+  local pages = skin and #skin.pages or 1
+  if pages > 1 then return entry.id .. " (" .. pages .. " pages)" end
+  return entry.id
+end
+
+function Editor.cycleSkin(dir)
+  local n = #(Editor.skins or {}) + 1
+  local idx = ((Editor.skinIndex() - 1 + (dir or 1)) % n) + 1
+  local entry = Editor.skins[idx - 1]
+  Editor.exportMsg = nil
+  TouchControls:selectSkin(entry and entry.id or nil)
+  TouchControls:ensureImages()
+end
+
+function Editor.exportSkin()
+  local skin = TouchSkin.active
+  if not skin then return end
+  local path, missing = TouchSkin.export(skin)
+  if not path then
+    Editor.exportMsg = "Export failed: " .. tostring(missing)
+    return
+  end
+  Editor.exportMsg = "Exported to " .. path .. " in your save folder."
+  if type(missing) == "table" and missing[1] then
+    Editor.exportMsg = Editor.exportMsg
+      .. " " .. #missing .. " image(s) were missing and left out."
+  end
+  Editor.skins = TouchSkin.list()
 end
 
 function Editor.unload()
   TouchControls:setPreview(false)
   TouchControls:reset()
+  PadCursor.reset()
   Editor.drag = nil
   Editor.onClose = nil
+  Editor.version = nil
+  Editor.rects = {}
+  Editor._hostMouse = false
+  Editor._hostTouches = nil
 end
 
 local function persist()
   local opts = SaveData.loadOptions()
   local cfg = TouchControls:config()
-  -- replaces the whole table, so a pre-#633 top-level positions key is
-  -- dropped once the player saves under the new shape
-  opts.touchControls = {
+  local block = {
     enabled = cfg.enabled,
+    skin = cfg.skin,
     layouts = cfg.layouts,
   }
+  if Editor.version == "gold" then
+    opts.gold = type(opts.gold) == "table" and opts.gold or {}
+    opts.gold.touchControls = block
+  else
+    opts.touchControls = block
+  end
   SaveData.saveOptions(opts)
 end
 
 local function close()
+  if Editor._closed then return end
+  Editor._closed = true
   persist()
   local cb = Editor.onClose
   Editor.unload()
@@ -94,13 +179,14 @@ local function toggleEnabled()
   if not Editor.enabled then TouchControls:reset() end
 end
 
-function Editor.update(_dt)
-  -- drag follows the live pointer when love.touch / mouse is available;
-  -- touchmoved / mousemoved also update, so this is a belt-and-suspenders
-  -- path for Android where move events can be thin
+function Editor.update(dt)
+  PadCursor.update(dt or 0)
+  if Editor.hostPoll then Editor.pollHostPointers() end
   if not Editor.drag then return end
   local x, y
-  if love.touch and love.touch.getPosition and Editor.drag.touchId then
+  if Editor.drag.touchId == "pad" then
+    x, y = PadCursor.pointer()
+  elseif love.touch and love.touch.getPosition and Editor.drag.touchId then
     local ok, tx, ty = pcall(love.touch.getPosition, Editor.drag.touchId)
     if ok and tx then x, y = tx, ty end
   end
@@ -130,6 +216,8 @@ function Editor.draw()
   col(PAL.bgTop, 0.85)
   love.graphics.circle("fill", ox + ww * 0.5, oy + wh * 0.15, math.max(ww, wh) * 0.55)
 
+  if TouchSkin.active then TouchControls:draw() end
+
   local pad = 18 * s
   local barH = 56 * s
   local btnH = 40 * s
@@ -142,15 +230,17 @@ function Editor.draw()
   love.graphics.setLineWidth(1)
   love.graphics.line(0, oy + barH + pad, fullW, oy + barH + pad)
 
-  love.graphics.setFont(Editor.fonts.title)
-  col(PAL.white)
-  love.graphics.print("Touch Controls", ox + pad, oy + pad + 4 * s)
-
   -- Done / Reset
   local done = { x = ox + ww - pad - btnW, y = oy + pad + (barH - btnH) / 2,
                  w = btnW, h = btnH }
   local reset = { x = done.x - 10 * s - btnW, y = done.y, w = btnW, h = btnH }
   Editor.rects.done, Editor.rects.reset = done, reset
+
+  love.graphics.setFont(Editor.fonts.title)
+  col(PAL.white)
+  love.graphics.print(
+    fitText(Editor.fonts.title, "Touch Controls", reset.x - 10 * s - (ox + pad)),
+    ox + pad, oy + pad + 4 * s)
 
   local function chromeBtn(r, label, fill)
     col(fill, 0.9)
@@ -195,9 +285,48 @@ function Editor.draw()
   chromeBtn(toggle, on and "Disable" or "Enable",
             on and PAL.red or PAL.green)
 
+  local skinY = cardY + cardH + 10 * s
+  col(PAL.card, 0.88)
+  roundRect("fill", cardX, skinY, cardW, cardH, 12 * s)
+  col(PAL.stroke, 0.4)
+  roundRect("line", cardX, skinY, cardW, cardH, 12 * s)
+
+  local stepW = 52 * s
+  local skinNext = { x = cardX + cardW - 16 * s - stepW,
+                     y = skinY + (cardH - btnH) / 2, w = stepW, h = btnH }
+  local skinPrev = { x = skinNext.x - 10 * s - stepW, y = skinNext.y,
+                     w = stepW, h = btnH }
+  Editor.rects.skinNext, Editor.rects.skinPrev = skinNext, skinPrev
+
+  local leftmost = skinPrev.x
+  if TouchSkin.active then
+    local expW = 86 * s
+    local export = { x = skinPrev.x - 10 * s - expW, y = skinPrev.y,
+                     w = expW, h = btnH }
+    Editor.rects.export = export
+    leftmost = export.x
+  else
+    Editor.rects.export = nil
+  end
+
+  local skinTextW = leftmost - 10 * s - (cardX + 16 * s)
+  love.graphics.setFont(Editor.fonts.body)
+  col(PAL.label)
+  love.graphics.print("Skin", cardX + 16 * s, skinY + 12 * s)
+  love.graphics.setFont(Editor.fonts.btn)
+  col(TouchControls.skinId and PAL.green or PAL.white)
+  love.graphics.print(fitText(Editor.fonts.btn, Editor.skinLabel(), skinTextW),
+                      cardX + 16 * s, skinY + 34 * s)
+
+  chromeBtn(skinPrev, "<", { 60, 70, 110 })
+  chromeBtn(skinNext, ">", { 60, 70, 110 })
+  if Editor.rects.export then
+    chromeBtn(Editor.rects.export, "Export", { 60, 70, 110 })
+  end
+
   -- size card (#633): -/+ resize every control in the orientation on
   -- screen; the heading names it so it is plain the other one is untouched
-  local sizeY = cardY + cardH + 10 * s
+  local sizeY = skinY + cardH + 10 * s
   col(PAL.card, 0.88)
   roundRect("fill", cardX, sizeY, cardW, cardH, 12 * s)
   col(PAL.stroke, 0.4)
@@ -215,7 +344,6 @@ function Editor.draw()
     string.format("%d%%", math.floor((bucket.scale or 1) * 100 + 0.5)),
     cardX + 16 * s, sizeY + 34 * s)
 
-  local stepW = 52 * s
   local plus = { x = cardX + cardW - 16 * s - stepW,
                  y = sizeY + (cardH - btnH) / 2, w = stepW, h = btnH }
   local minus = { x = plus.x - 10 * s - stepW, y = plus.y, w = stepW, h = btnH }
@@ -226,13 +354,19 @@ function Editor.draw()
   -- hint
   love.graphics.setFont(Editor.fonts.body)
   col(PAL.label, 0.9)
-  local hint = on
-    and "Drag each button to reposition, -/+ to resize. Portrait and landscape are saved separately when you tap Done."
-    or "Controls are hidden in-game. Enable them to show and edit the layout."
+  local hint
+  if Editor.exportMsg then
+    hint = Editor.exportMsg
+  elseif not on then
+    hint = "Controls are hidden in-game. Enable them to show and edit the layout."
+  elseif TouchSkin.active then
+    hint = "This skin owns its own art, hitboxes and screen position, so size and dragging are off. Drop a RetroArch overlay folder or .zip into the skins folder of your save directory to add more."
+  else
+    hint = "Drag each button to reposition, -/+ to resize. Portrait and landscape are saved separately when you tap Done."
+  end
   love.graphics.printf(hint, ox + pad, sizeY + cardH + 12 * s, ww - 2 * pad, "left")
 
-  -- the overlay itself (preview mode; dimmed when disabled)
-  TouchControls:draw()
+  if not TouchSkin.active then TouchControls:draw() end
 
   -- highlight the control under drag
   if Editor.drag then
@@ -244,6 +378,9 @@ function Editor.draw()
       love.graphics.circle("line", zone.cx, zone.cy, zone.w * 0.62)
     end
   end
+
+  -- pad / Joy-Con virtual cursor (after chrome so it sits on top)
+  PadCursor.draw()
 end
 
 local function beginDrag(id, x, y)
@@ -251,6 +388,9 @@ local function beginDrag(id, x, y)
   if inside(Editor.rects.done, x, y) then close(); return end
   if inside(Editor.rects.reset, x, y) then resetLayout(); return end
   if inside(Editor.rects.toggle, x, y) then toggleEnabled(); return end
+  if inside(Editor.rects.skinPrev, x, y) then Editor.cycleSkin(-1); return end
+  if inside(Editor.rects.skinNext, x, y) then Editor.cycleSkin(1); return end
+  if inside(Editor.rects.export, x, y) then Editor.exportSkin(); return end
   if inside(Editor.rects.sizeDown, x, y) then
     TouchControls:nudgeScale(-TouchControls.SCALE_STEP); return
   end
@@ -258,6 +398,7 @@ local function beginDrag(id, x, y)
     TouchControls:nudgeScale(TouchControls.SCALE_STEP); return
   end
 
+  if TouchSkin.active then return end
   local name = TouchControls:hitTest(x, y)
   if not name then return end
   local zone = TouchControls:layout()[name]
@@ -283,8 +424,52 @@ local function endDrag(id)
   Editor.drag = nil
 end
 
+function Editor.pollHostPointers()
+  local down = love.mouse and love.mouse.isDown and love.mouse.isDown(1)
+  if down then
+    local x, y = love.mouse.getPosition()
+    if not Editor._hostMouse then
+      Editor._hostMouse = true
+      beginDrag("mouse", x, y)
+      if Editor._closed then return end
+    else
+      moveDrag("mouse", x, y)
+    end
+  elseif Editor._hostMouse then
+    Editor._hostMouse = false
+    endDrag("mouse")
+  end
+  if not (love.touch and love.touch.getTouches and love.touch.getPosition) then
+    return
+  end
+  Editor._hostTouches = Editor._hostTouches or {}
+  local seen = {}
+  for _, id in ipairs(love.touch.getTouches()) do
+    seen[id] = true
+    local ok, tx, ty = pcall(love.touch.getPosition, id)
+    if ok and tx then
+      if not Editor._hostTouches[id] then
+        Editor._hostTouches[id] = true
+        beginDrag(id, tx, ty)
+        if Editor._closed then return end
+      else
+        moveDrag(id, tx, ty)
+      end
+    end
+  end
+  for id in pairs(Editor._hostTouches) do
+    if not seen[id] then
+      Editor._hostTouches[id] = nil
+      endDrag(id)
+    end
+  end
+end
+
 function Editor.mousepressed(x, y, button)
   if button ~= 1 then return end
+  -- Finger / mouse tap yields the Joy-Con pointer so the click lands where
+  -- the event said (same NX soft-miss fix as the save editor).
+  PadCursor.yieldToPointer()
   beginDrag("mouse", x, y)
 end
 
@@ -298,6 +483,7 @@ function Editor.mousereleased(x, y, button)
 end
 
 function Editor.touchpressed(id, x, y)
+  PadCursor.yieldToPointer()
   beginDrag(id, x, y)
 end
 
@@ -309,17 +495,105 @@ function Editor.touchreleased(id, x, y)
   endDrag(id)
 end
 
+local function handlePadAction(action)
+  if not action then return end
+  if action == "a" then
+    local mx, my = PadCursor.pointer()
+    beginDrag("pad", mx, my)
+  elseif action == "b" then
+    close()
+  elseif action == "tab_prev" then
+    TouchControls:nudgeScale(-TouchControls.SCALE_STEP)
+  elseif action == "tab_next" then
+    TouchControls:nudgeScale(TouchControls.SCALE_STEP)
+  end
+end
+
+function Editor.gamepadpressed(joystick, button)
+  handlePadAction(PadCursor.gamepadpressed(joystick, button))
+end
+
+function Editor.gamepadreleased(joystick, button)
+  PadCursor.gamepadreleased(joystick, button)
+  -- A release ends a pad drag (hold A + stick to reposition a control).
+  local action = GamepadMap.mapGamepadButton(button)
+  if action == "a" then endDrag("pad") end
+end
+
+function Editor.gamepadaxis(joystick, axis, value)
+  PadCursor.gamepadaxis(joystick, axis, value)
+end
+
+function Editor.joystickpressed(joystick, button)
+  handlePadAction(PadCursor.joystickpressed(joystick, button))
+end
+
+function Editor.joystickreleased(joystick, button)
+  PadCursor.joystickreleased(joystick, button)
+  if GamepadMap.ignoreRawForJoystick(joystick) then return end
+  local padButton = GamepadMap.mapRawToGamepadButton(button)
+  if padButton then
+    local action = GamepadMap.mapGamepadButton(padButton)
+    if action == "a" then endDrag("pad") end
+  end
+end
+
+function Editor.joystickaxis(joystick, axis, value)
+  PadCursor.joystickaxis(joystick, axis, value)
+end
+
+function Editor.joystickhat(joystick, hat, direction)
+  PadCursor.joystickhat(joystick, hat, direction)
+end
+
 function Editor.keypressed(key)
   if key == "escape" or key == "return" or key == "space" then
     close()
   elseif key == "r" then
     resetLayout()
+  elseif key == "[" then
+    Editor.cycleSkin(-1)
+  elseif key == "]" then
+    Editor.cycleSkin(1)
+  elseif key == "e" then
+    Editor.exportSkin()
   -- desktop shortcuts for the size -/+ (POKEPORT_TOUCH=1 testing, #633)
   elseif key == "-" or key == "kp-" then
     TouchControls:nudgeScale(-TouchControls.SCALE_STEP)
   elseif key == "=" or key == "+" or key == "kp+" then
     TouchControls:nudgeScale(TouchControls.SCALE_STEP)
   end
+end
+
+function Editor.new(game)
+  local state = { game = game, isOpaque = true }
+  Editor.hostPoll = true
+  Editor.load({
+    version = "gold",
+    hostPoll = true,
+    onClose = function()
+      Editor.hostPoll = false
+      if game.options then
+        game.options.touchControls = TouchControls:config()
+      end
+      if game.stack and game.stack:top() == state then
+        game.stack:pop()
+      end
+      if game.applyOptions then game:applyOptions() end
+    end,
+  })
+  function state:wantsFillScale() return true end
+  function state:drawsWidescreen() return true end
+  function state:update(dt)
+    Editor.update(dt)
+    local input = self.game and self.game.input
+    if input and input:wasPressed("b") then close() end
+  end
+  function state:draw() end
+  function state:drawWidescreen(_w, _h)
+    Editor.draw()
+  end
+  return state
 end
 
 return Editor

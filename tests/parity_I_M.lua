@@ -114,10 +114,10 @@ eq(ow:checkBoulderPush("right"), false, "no push before activation (bump 1)")
 eq(ow:checkBoulderPush("right"), false, "no push before activation (bump 2)")
 eq(boulder.cellX, 18, "boulder unmoved while STRENGTH is inactive")
 
--- activate via the party menu STRENGTH action (submenu {STATS,SWITCH,STRENGTH})
+-- activate via the party menu STRENGTH action (submenu {STRENGTH,STATS,SWITCH})
 clearCaptured()
 local pmStr = PartyMenu.new(Game)
-selectSubItem(pmStr, 3)
+selectSubItem(pmStr, 1)
 eq(Game.overworld.strengthActive, true, "party-menu STRENGTH sets strengthActive")
 check(onStack(pmStr), "party menu stays under the STRENGTH texts (#385)")
 check(sawText("used") and sawText("STRENGTH"), "_UsedStrengthText shown")
@@ -156,7 +156,7 @@ Game.save.inventory.SOULBADGE = true
 ow.player.facing = "up"; ow.player.surfing = false
 clearCaptured()
 local pmSurfFail = PartyMenu.new(Game)
-selectSubItem(pmSurfFail, 3)
+selectSubItem(pmSurfFail, 1)
 check(sawText("No SURFing"), "_NoSurfingHereText when not facing water")
 check(pmSurfFail.submenu == true, "party menu stays open after a failed SURF")
 eq(ow.player.surfing, false, "no mount when SURF fails")
@@ -166,7 +166,7 @@ popToOW()
 ow.player.facing = "down"; ow.player.surfing = false
 clearCaptured()
 local pmSurf = PartyMenu.new(Game)
-selectSubItem(pmSurf, 3)
+selectSubItem(pmSurf, 1)
 -- the got-on text prints over the menu (#385); dismissing it closes the
 -- menu and mounts, and the blink that follows carries the step
 check(onStack(pmSurf), "party menu stays under the got-on text")
@@ -176,7 +176,8 @@ check(not onStack(pmSurf), "party menu closes after a successful SURF")
 check(sawText("got on"), "_SurfingGotOnText shown on a successful SURF")
 
 -- ===========================================================================
--- I: list-time badge filter,  CUT/SURF/STRENGTH absent without the badge
+-- I: GetMonFieldMoves is badge-blind -- CUT/SURF/STRENGTH are listed with or
+-- without the badge, and .outOfBattleMovePointers refuses on selection (#1022)
 -- ===========================================================================
 Game.save.party = { mkMon("SQUIRTLE", "CUT", "SURF", "STRENGTH") }
 Game.save.inventory = {}
@@ -185,8 +186,8 @@ local pmNoBadge = PartyMenu.new(Game)
 Game.stack:push(pmNoBadge)
 frame({ "a" })
 local actsOff = submenuActions(pmNoBadge)
-check(not actsOff.cut and not actsOff.surf and not actsOff.strength,
-      "no CUT/SURF/STRENGTH submenu entries without the required badges")
+check(actsOff.cut and actsOff.surf and actsOff.strength,
+      "CUT/SURF/STRENGTH submenu entries listed without the badges (#1022)")
 popToOW()
 Game.save.inventory = { CASCADEBADGE = true, SOULBADGE = true, RAINBOWBADGE = true }
 local pmBadge = PartyMenu.new(Game)
@@ -194,7 +195,7 @@ Game.stack:push(pmBadge)
 frame({ "a" })
 local actsOn = submenuActions(pmBadge)
 check(actsOn.cut and actsOn.surf and actsOn.strength,
-      "CUT/SURF/STRENGTH submenu entries appear once the badges are held")
+      "CUT/SURF/STRENGTH submenu entries still there once the badges are held")
 
 -- ===========================================================================
 -- I: CUT from the party menu. The Cerulean tree BLOCK (50, at block 9,14)
@@ -228,7 +229,7 @@ ow = pushOW("CERULEAN_CITY", 19, 27, "down")
 -- success path: facing the tree -> _UsedCutText, menu closes, tree replaced
 clearCaptured()
 local pmCut = PartyMenu.new(Game)
-selectSubItem(pmCut, 3)
+selectSubItem(pmCut, 1)
 check(not onStack(pmCut), "party menu closes after a successful CUT")
 check(sawText("CUT"), "_UsedCutText shown on a successful CUT")
 drainText() -- the tree swap is deferred until the message is dismissed
@@ -239,7 +240,7 @@ popToOW()
 ow.player.facing = "up"
 clearCaptured()
 local pmCutFail = PartyMenu.new(Game)
-selectSubItem(pmCutFail, 3)
+selectSubItem(pmCutFail, 1)
 check(sawText("anything to CUT"), "_NothingToCutText when not facing a tree")
 check(pmCutFail.submenu == true, "party menu stays open after a failed CUT")
 ow.player.facing = "right"
@@ -276,7 +277,7 @@ Game.save.forcedBike = true
 eq(ow:useSurfFieldMove(), "forced_bike", "forced bike refuses SURF (even facing water)")
 clearCaptured()
 local pmBike = PartyMenu.new(Game)
-selectSubItem(pmBike, 3)
+selectSubItem(pmBike, 1)
 check(sawText("Cycling is fun!\nForget SURFing!"), "_CyclingIsFunText verbatim")
 check(pmBike.submenu == true, "party menu stays open (.loop) after the bike refusal")
 eq(ow.player.surfing, false, "no mount on the Cycling Road")
@@ -320,7 +321,7 @@ check(ow.map:isWaterCell(7, 12), "water south of the B4F stairs square")
 eq(ow:useSurfFieldMove(), "current", "B4F stairs square refuses SURF pre-boulders")
 clearCaptured()
 local pmCur = PartyMenu.new(Game)
-selectSubItem(pmCur, 3)
+selectSubItem(pmCur, 1)
 check(sawText("The current is\nmuch too fast!"), "_CurrentTooFastText verbatim")
 check(pmCur.submenu == true, "party menu stays open (.loop) after the current refusal")
 eq(ow.player.surfing, false, "no mount against the current")
@@ -356,7 +357,7 @@ table.remove(ow.entities)
 -- .goBackToMap) and the simulated pad press steps the player ashore
 clearCaptured()
 local pmOff = PartyMenu.new(Game)
-selectSubItem(pmOff, 3)
+selectSubItem(pmOff, 1)
 check(not onStack(pmOff), "party menu closes on dismount")
 eq(ow.player.surfing, false, ".stopSurfing returns to walking before the step")
 eq(#captured, 0, "no message on a successful dismount")
@@ -375,7 +376,7 @@ ow.player.px, ow.player.py = 4 * 16, 15 * 16
 ow.player.facing = "down"
 clearCaptured()
 local pmNoOff = PartyMenu.new(Game)
-selectSubItem(pmNoOff, 3)
+selectSubItem(pmNoOff, 1)
 check(sawText("There's no place\nto get off!"), "_SurfingNoPlaceToGetOffText verbatim")
 check(onStack(pmNoOff), "the menu stays under the message (#385)")
 eq(ow.player.surfing, true, "still surfing after a blocked dismount")
@@ -394,7 +395,7 @@ Game.save.inventory = { RAINBOWBADGE = true }
 ow = pushOW("SEAFOAM_ISLANDS_1F", 17, 10, "right")
 clearCaptured()
 local pmStr2 = PartyMenu.new(Game)
-selectSubItem(pmStr2, 3)
+selectSubItem(pmStr2, 1)
 local page1 = Game.stack:top()
 check(page1 ~= nil and page1.pages ~= nil and page1.auto ~= nil,
       "_UsedStrengthText box is a no-prompt (auto) page")
@@ -471,8 +472,9 @@ local pmLobby = PartyMenu.new(Game)
 Game.stack:push(pmLobby)
 frame({ "a" })
 local actsLobby = submenuActions(pmLobby)
-check(not actsLobby.fly, "FLY omitted inside Indigo Plateau lobby")
-check(not actsLobby.escape, "TELEPORT omitted inside Indigo Plateau lobby")
+check(actsLobby.fly, "FLY still listed inside Indigo Plateau lobby (#1022)")
+check(actsLobby.escape,
+      "TELEPORT still listed inside Indigo Plateau lobby (#1022)")
 popToOW()
 
 -- restore fainted field-move mon for the STRENGTH/SURF cases below
@@ -486,8 +488,8 @@ Game.save.inventory = {
 ow = pushOW("SEAFOAM_ISLANDS_1F", 17, 10, "right")
 clearCaptured()
 local pmFaintStr = PartyMenu.new(Game)
--- Seafoam is not OVERWORLD, so FLY is omitted: STATS, SWITCH, CUT, STRENGTH, SURF
-selectSubItem(pmFaintStr, 4)
+-- move order on the mon: FLY, CUT, STRENGTH, SURF, then STATS, SWITCH
+selectSubItem(pmFaintStr, 3)
 eq(Game.overworld.strengthActive, true,
    "fainted mon can activate STRENGTH from the party menu")
 check(sawText("used") and sawText("STRENGTH"),
@@ -501,9 +503,9 @@ ow = pushOW("PALLET_TOWN", 4, 13, "down")
 ow.player.surfing = false
 eq(ow:useSurfFieldMove(), "ok", "useSurfFieldMove ok with only a fainted SURF mon")
 clearCaptured()
--- submenu order: STATS, SWITCH, FLY, CUT, STRENGTH, SURF (move order on mon)
+-- submenu order: FLY, CUT, STRENGTH, SURF (move order on mon), then STATS, SWITCH
 local pmFaintSurf = PartyMenu.new(Game)
-selectSubItem(pmFaintSurf, 6)
+selectSubItem(pmFaintSurf, 4)
 Game.stack:pop().onDone() -- dismiss the text: menu closes, mount (#320, #385)
 eq(ow.player.surfing, true, "fainted mon can SURF from the party menu")
 check(not onStack(pmFaintSurf), "party menu closes after fainted SURF")

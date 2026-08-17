@@ -27,6 +27,11 @@ NATIVE_SRC = IOS_DIR / "native"
 NATIVE_DST = LOVE_SRC / "platform" / "xcode" / "ios" / "native"
 WRAP_SYSTEM = LOVE_SRC / "src" / "modules" / "system" / "wrap_System.cpp"
 PBXPROJ = LOVE_SRC / "platform" / "xcode" / "love.xcodeproj" / "project.pbxproj"
+APPLE_MM = LOVE_SRC / "src" / "common" / "apple.mm"
+FILESYSTEM_CPP = LOVE_SRC / "src" / "modules" / "filesystem" / "physfs" / "Filesystem.cpp"
+IOS_MM = LOVE_SRC / "src" / "common" / "ios.mm"
+IOS_H = LOVE_SRC / "src" / "common" / "ios.h"
+SYSTEM_CPP = LOVE_SRC / "src" / "modules" / "system" / "System.cpp"
 ENTITLEMENTS_SRC = IOS_DIR / "overlays" / "love-ios.entitlements"
 
 NATIVE_FILES = ("GRPickerBridge.swift", "GRHealthBridge.swift", "GRBootstrap.m")
@@ -84,6 +89,50 @@ int w_pickFile(lua_State *L)
 	return gr_callBridge(L, "GRPickerBridge", "presentPickerWithKind:saveDir:", kind);
 }
 
+// love.system.pickFileKinds() -> the comma-separated kinds supported by the
+// Swift bridge (including required_import), or nil off iOS.
+//
+// So a caller can ask what this build's picker understands BEFORE opening it.
+// An unknown kind is refused (GRPickerBridge), and a refusal looks exactly
+// like a picker that would not open -- so a caller with a fallback worth
+// showing needs to know which it is facing. A mod that guesses instead has
+// no way back: before the refusal landed, an unrecognised kind wrote
+// picked_rom.gb and the ROM importer deleted it.
+//
+// nil where there is no bridge at all, which reads the same as "no kinds".
+int w_pickFileKinds(lua_State *L)
+{
+	Class cls = objc_getClass("GRPickerBridge");
+	if (cls == nullptr)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	// Fetched through the runtime: wrap_System.cpp is compiled as C++ rather
+	// than Objective-C++, so no Foundation type may be NAMED here -- writing
+	// `NSString` alone breaks the whole translation unit. objc_msgSend is a
+	// plain C entry point and `id` comes from objc/runtime.h, so the string
+	// is asked for its UTF8 bytes without ever being typed.
+	typedef id (*GRObj)(Class, SEL);
+	id kinds = ((GRObj)objc_msgSend)(cls,
+	                                 sel_registerName("supportedPickerKinds"));
+	if (kinds == nullptr)
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	typedef const char *(*GRUTF8)(id, SEL);
+	const char *bytes = ((GRUTF8)objc_msgSend)(kinds,
+	                                           sel_registerName("UTF8String"));
+	if (bytes == nullptr || bytes[0] == '\\0')
+	{
+		lua_pushnil(L);
+		return 1;
+	}
+	lua_pushstring(L, bytes);
+	return 1;
+}
+
 int w_createFile(lua_State *L)
 {
 	const char *name = luaL_optstring(L, 1, "export.sav");
@@ -101,8 +150,77 @@ int w_syncHealthSteps(lua_State *L)
 
 WRAP_REGISTRATION = """#ifdef LOVE_IOS
 	{ "pickFile", w_pickFile },
+	{ "pickFileKinds", w_pickFileKinds },
 	{ "createFile", w_createFile },
 	{ "syncHealthSteps", w_syncHealthSteps },
+	{ "httpDownload", w_httpDownload },
+#endif
+"""
+
+WRAP_SYNC_FUNCS = """
+#ifdef LOVE_IOS
+static const char *gr_saveDirectory()
+{
+	static std::string saveDirectory;
+	auto fs = Module::getInstance<love::filesystem::Filesystem>(Module::M_FILESYSTEM);
+	if (fs == nullptr)
+		return "";
+	saveDirectory = fs->getSaveDirectory();
+	return saveDirectory.c_str();
+}
+
+static int gr_callBridge(lua_State *L, const char *className,
+                         const char *selector, const char *arg)
+{
+	Class cls = objc_getClass(className);
+	if (cls == nullptr)
+	{
+		lua_pushboolean(L, 0);
+		return 1;
+	}
+	typedef signed char (*GRMsg)(Class, SEL, const char *, const char *);
+	signed char ok = ((GRMsg)objc_msgSend)(cls, sel_registerName(selector),
+	                                       arg, gr_saveDirectory());
+	lua_pushboolean(L, ok != 0);
+	return 1;
+}
+
+int w_syncHealthSteps(lua_State *L)
+{
+	return gr_callBridge(L, "GRHealthBridge", "syncStepsWithCommand:saveDir:", "sync");
+}
+#endif
+
+"""
+
+WRAP_SYNC_REGISTRATION = """#ifdef LOVE_IOS
+	{ "syncHealthSteps", w_syncHealthSteps },
+	{ "httpDownload", w_httpDownload },
+#endif
+"""
+
+BRIDGE_EXTRA_FUNCS = """
+#ifdef LOVE_IOS
+int w_httpDownload(lua_State *L)
+{
+	const char *url = luaL_checkstring(L, 1);
+	const char *destination = luaL_checkstring(L, 2);
+	const char *userAgent = luaL_optstring(L, 3, "gen1recomp");
+	const char *accept = luaL_optstring(L, 4, "");
+	Class cls = objc_getClass("GRPickerBridge");
+	if (cls == nullptr)
+	{
+		lua_pushboolean(L, 0);
+		return 1;
+	}
+	typedef signed char (*GRDownload)(Class, SEL, const char *, const char *,
+	                                  const char *, const char *);
+	signed char ok = ((GRDownload)objc_msgSend)(
+		cls, sel_registerName("httpDownloadWithUrl:destination:userAgent:accept:"),
+		url, destination, userAgent, accept);
+	lua_pushboolean(L, ok != 0);
+	return 1;
+}
 #endif
 """
 
@@ -133,19 +251,20 @@ def fail(msg):
     sys.exit(1)
 
 
-def pristine(path: Path) -> str:
+def pristine(path: Path, patched_markers=None) -> str:
     """Text of `path` before any of our patching: backed by a `.orig` stash.
 
     The stash is only trusted if it is itself unpatched; that protects
     against a stash accidentally taken after an earlier patch run.
     """
+    patched_markers = tuple(patched_markers or (MARKER, ID_FILE_PICKER))
     orig = path.with_suffix(path.suffix + ".orig")
     if orig.is_file():
         text = orig.read_text()
-        if MARKER not in text and ID_FILE_PICKER not in text:
+        if not any(marker in text for marker in patched_markers):
             return text
     text = path.read_text()
-    if MARKER in text or ID_FILE_PICKER in text:
+    if any(marker in text for marker in patched_markers):
         fail(f"{path} is already patched and no pristine .orig stash exists;\n"
              f"  delete {LOVE_SRC} and re-run scripts/build_ios.sh --fetch")
     orig.write_text(text)
@@ -174,14 +293,117 @@ def patch_wrap_system():
     anchor = "static const luaL_Reg functions[] ="
     if anchor not in text:
         fail(f"anchor not found in {WRAP_SYSTEM}")
-    text = text.replace(anchor, WRAP_FUNCS + anchor, 1)
+    has_native_picker = re.search(r"\bint w_pickFile\s*\(", text) is not None
+    bridge_funcs = WRAP_SYNC_FUNCS if has_native_picker else WRAP_FUNCS
+    text = text.replace(anchor, bridge_funcs + BRIDGE_EXTRA_FUNCS + anchor, 1)
     reg_anchor = '\t{ "vibrate", w_vibrate },\n'
     if reg_anchor not in text:
         fail(f"registration anchor not found in {WRAP_SYSTEM}")
-    text = text.replace(reg_anchor, reg_anchor + WRAP_REGISTRATION, 1)
+    registration = WRAP_SYNC_REGISTRATION if has_native_picker else WRAP_REGISTRATION
+    text = text.replace(reg_anchor, reg_anchor + registration, 1)
     WRAP_SYSTEM.write_text(text)
     print("patch_love_src: wrap_System.cpp patched "
-          "(pickFile/createFile/syncHealthSteps)")
+          "(pickFile/createFile/syncHealthSteps/httpDownload)")
+
+
+def patch_public_documents():
+    text = pristine(
+        APPLE_MM,
+        ("#ifdef LOVE_IOS\n"
+         "\t\t\tnsdir = NSDocumentDirectory;\n"
+         "#else\n",),
+    )
+    original = (
+        "\t\tcase USER_DIRECTORY_APPSUPPORT:\n"
+        "\t\t\tnsdir = NSApplicationSupportDirectory;\n"
+        "\t\t\tbreak;"
+    )
+    replacement = (
+        "\t\tcase USER_DIRECTORY_APPSUPPORT:\n"
+        "#ifdef LOVE_IOS\n"
+        "\t\t\tnsdir = NSDocumentDirectory;\n"
+        "#else\n"
+        "\t\t\tnsdir = NSApplicationSupportDirectory;\n"
+        "#endif\n"
+        "\t\t\tbreak;"
+    )
+    if original not in text:
+        fail(f"iOS app-support path anchor not found in {APPLE_MM}")
+    APPLE_MM.write_text(text.replace(original, replacement, 1))
+
+    filesystem_text = pristine(
+        FILESYSTEM_CPP,
+        ("#ifdef LOVE_IOS\n"
+         "\t\t\tsuffix.clear();\n"
+         "#else\n",),
+    )
+    filesystem_original = (
+        "\t\tstd::string suffix;\n"
+        "\t\tif (isFused())\n"
+        "\t\t\tsuffix = std::string(LOVE_PATH_SEPARATOR) + saveIdentity;\n"
+        "\t\telse\n"
+        "\t\t\tsuffix = std::string(LOVE_PATH_SEPARATOR LOVE_APPDATA_FOLDER LOVE_PATH_SEPARATOR) + saveIdentity;"
+    )
+    filesystem_replacement = (
+        "\t\tstd::string suffix;\n"
+        "#ifdef LOVE_IOS\n"
+        "\t\t\tsuffix.clear();\n"
+        "#else\n"
+        "\t\tif (isFused())\n"
+        "\t\t\tsuffix = std::string(LOVE_PATH_SEPARATOR) + saveIdentity;\n"
+        "\t\telse\n"
+        "\t\t\tsuffix = std::string(LOVE_PATH_SEPARATOR LOVE_APPDATA_FOLDER LOVE_PATH_SEPARATOR) + saveIdentity;\n"
+        "#endif"
+    )
+    if filesystem_original not in filesystem_text:
+        fail(f"iOS save directory suffix anchor not found in {FILESYSTEM_CPP}")
+    FILESYSTEM_CPP.write_text(filesystem_text.replace(filesystem_original,
+                                                       filesystem_replacement, 1))
+    print("patch_love_src: iOS save directory routed to Documents root")
+
+
+def patch_ios_haptics():
+    text = pristine(IOS_MM, ("UIImpactFeedbackGenerator",))
+    original = """void vibrate()
+{
+	@autoreleasepool
+	{
+		AudioServicesPlaySystemSound(kSystemSoundID_Vibrate);
+	}
+}
+"""
+    replacement = """void vibrate(double seconds)
+{
+	@autoreleasepool
+	{
+		UIImpactFeedbackStyle style = UIImpactFeedbackStyleLight;
+		if (seconds >= 0.035)
+			style = UIImpactFeedbackStyleHeavy;
+		else if (seconds >= 0.02)
+			style = UIImpactFeedbackStyleMedium;
+		UIImpactFeedbackGenerator *generator = [[UIImpactFeedbackGenerator alloc]
+			initWithStyle:style];
+		[generator prepare];
+		[generator impactOccurred];
+	}
+}
+"""
+    if original not in text:
+        fail(f"iOS haptic anchor not found in {IOS_MM}")
+    IOS_MM.write_text(text.replace(original, replacement, 1))
+
+    header = pristine(IOS_H, ("void vibrate(double seconds);",))
+    header_original = "void vibrate();"
+    if header_original not in header:
+        fail(f"iOS haptic declaration not found in {IOS_H}")
+    IOS_H.write_text(header.replace(header_original, "void vibrate(double seconds);", 1))
+
+    system = pristine(SYSTEM_CPP, ("love::ios::vibrate(seconds)",))
+    system_original = "love::ios::vibrate();"
+    if system_original not in system:
+        fail(f"iOS haptic call site not found in {SYSTEM_CPP}")
+    SYSTEM_CPP.write_text(system.replace(system_original, "love::ios::vibrate(seconds);", 1))
+    print("patch_love_src: iOS haptics use Taptic Engine impact presets")
 
 
 def patch_pbxproj():
@@ -234,7 +456,9 @@ def patch_pbxproj():
             fail(f"build configuration {config_id} not found")
         settings = (
             "\t\t\t\tSWIFT_VERSION = 5.0;\n"
-            "\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = 14.0;\n"
+            "\t\t\t\tIPHONEOS_DEPLOYMENT_TARGET = 15.0;\n"
+            "\t\t\t\tPRODUCT_NAME = \"gen1recomp++\";\n"
+            "\t\t\t\tEXECUTABLE_NAME = \"gen1recomp++\";\n"
             '\t\t\t\tCODE_SIGN_ENTITLEMENTS = "ios/native/love-ios.entitlements";\n'
         )
         text = text[: m.end()] + settings + text[m.end():]
@@ -247,6 +471,8 @@ def main():
     if not LOVE_SRC.is_dir():
         fail("love-src/ missing; run scripts/build_ios.sh --fetch first")
     copy_native_files()
+    patch_public_documents()
+    patch_ios_haptics()
     patch_wrap_system()
     patch_pbxproj()
 

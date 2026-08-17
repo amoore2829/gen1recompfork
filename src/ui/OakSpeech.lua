@@ -20,6 +20,16 @@ local OakSpeech = {}
 OakSpeech.__index = OakSpeech
 OakSpeech.isOpaque = true
 
+-- The speech is a white field with a pic on it, and its dialogue box docks to
+-- the WINDOW's bottom edge (Renderer:setUIAnchor, via TextBox).  The white it
+-- fills below is only the 160x144 UI canvas, so once the box moved to the
+-- window edge the two stopped touching: black letterbox showed between the
+-- bottom of Oak's white and the top of the box he is speaking from.  Filling
+-- the voids with the paper shade -- the same opt-in a battle uses -- puts the
+-- box back on the field.  Not a literal 1,1,1: the canvas is colorized, so
+-- endFrame matches it with PaletteFX.paperShade.
+OakSpeech.letterboxWhite = true
+
 -- FadeInIntroPic runs a 6-step palette fade; MovePicLeft wipes the mon
 -- sprite in from the right.  Both play out before the beat's text prints.
 local FADE_FRAMES = 24
@@ -46,6 +56,8 @@ local FALLBACKS = {
   _OakSpeechText3 = Strings.source("{PLAYER}!\fYour very own\nPOKéMON legend is\vabout to unfold!\fA world of dreams\nand adventures\vwith POKéMON\vawaits! Let's go!"),
   _IntroducePlayerText = Strings.source("First, what is\nyour name?"),
   _IntroduceRivalText = Strings.source("This is my grand-\nson. He's been\vyour rival since\vyou were a baby.\f...Erm, what is\nhis name again?"),
+  _YourNameIsText = Strings.source("Right! So your\nname is {PLAYER}!"),
+  _HisNameIsText = Strings.source("That's right! I\nremember now! His\vname is {RIVAL}!"),
 }
 
 local function textOr(game, key)
@@ -86,14 +98,14 @@ function OakSpeech.resolvePic(game, desc, speech)
   local t = desc.type
   if t == "trainer" then
     if speech and desc.id == "OPP_PROF_OAK" and speech.oakPic then
-      return speech.oakPic, false, false
+      return speech.oakPic, false, speech.oakTrueColor or false
     end
     if speech and desc.id == "OPP_RIVAL1" and speech.rivalPic then
-      return speech.rivalPic, false, false
+      return speech.rivalPic, false, speech.rivalTrueColor or false
     end
     local trainers = game.data.trainers or {}
     local tr = trainers[desc.id]
-    return tryImage(tr and tr.pic), false, false
+    return tryImage(tr and tr.pic), false, tr and tr.trueColor or false
   elseif t == "pokemon" then
     if speech and desc.id == speech.demoSpecies and speech.demoPic then
       return speech.demoPic, desc.flip and true or false, speech.demoTrueColor
@@ -153,6 +165,14 @@ function OakSpeech.defaultSteps(speech)
       presetsFallback = { "RED", "ASH", "JACK" },
     },
     {
+      -- oak_speech.asm prints YourNameIsText right after the naming screen
+      -- returns ("Right! So your name is RED!"); the port went straight on
+      -- to the rival and dropped it, in every language.
+      id = "confirm_player_name",
+      kind = "say",
+      textKey = "_YourNameIsText",
+    },
+    {
       id = "ask_rival_name",
       kind = "say",
       textKey = "_IntroduceRivalText",
@@ -165,6 +185,12 @@ function OakSpeech.defaultSteps(speech)
       title = Strings("HIS NAME?"),
       presetsWho = "rival",
       presetsFallback = { "BLUE", "GARY", "JOHN" },
+    },
+    {
+      -- HisNameIsText, the rival's counterpart to the confirmation above
+      id = "confirm_rival_name",
+      kind = "say",
+      textKey = "_HisNameIsText",
     },
     {
       id = "legend",
@@ -215,7 +241,11 @@ function OakSpeech.new(game, onDone)
   self.answers = {}
   local trainers = game.data.trainers or {}
   self.oakPic = tryImage(trainers.OPP_PROF_OAK and trainers.OPP_PROF_OAK.pic)
+  self.oakTrueColor = self.oakPic
+    and trainers.OPP_PROF_OAK and trainers.OPP_PROF_OAK.trueColor or false
   self.rivalPic = tryImage(trainers.OPP_RIVAL1 and trainers.OPP_RIVAL1.pic)
+  self.rivalTrueColor = self.rivalPic
+    and trainers.OPP_RIVAL1 and trainers.OPP_RIVAL1.trueColor or false
   local oakGfx = (game.data.field and game.data.field.oakSpeech) or {}
   self.cfg = oakGfx
   -- the show-off mon and the name length cap come from data; the vanilla
@@ -239,7 +269,11 @@ function OakSpeech.new(game, onDone)
                              or "assets/generated/intro/shrink2.png")
   -- RedSprite: the walking sprite the pic shrinks into (frame 0 =
   -- standing, facing down)
-  local red = game.data.sprites and game.data.sprites.SPRITE_RED
+  local playerSprites = (game.data.field and game.data.field.playerSprites) or {}
+  -- The fallback has to read the same guarded table: reaching for
+  -- game.data.sprites.SPRITE_RED after the `and` already found it nil threw.
+  local sprites = game.data.sprites or {}
+  local red = sprites[playerSprites.walk or "SPRITE_RED"] or sprites.SPRITE_RED
   self.walkSheet = tryImage(red and red.image)
   return self
 end
@@ -611,6 +645,15 @@ function OakSpeech:draw()
     love.graphics.draw(self.walkSheet, self.walkQuad, 64, 60)
   end
   if self.shrinkText then
+    -- This is a REPLICA of the dialogue box that just closed, redrawn at
+    -- TextBox's own rect (BOX_TX..BOX_TH = 0,12,20,6) so the last page holds
+    -- while the pic shrinks.  The real box rides the bottom anchor, so this
+    -- one has to as well -- otherwise the text visibly jumps up a letterbox
+    -- on the frame the real box is swapped for this copy.
+    local r = self.game and self.game.renderer
+    if r and r.setUIAnchor then
+      r:setUIAnchor(0, 12 * 8, 20 * 8, 6 * 8, "bottom")
+    end
     Font.drawBox(0, 12, 20, 6)
     love.graphics.setColor(0, 0, 0, 1)
     for i, line in ipairs(self.shrinkText) do
