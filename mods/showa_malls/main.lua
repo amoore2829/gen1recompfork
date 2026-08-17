@@ -47,8 +47,10 @@ return function(mod)
     return true
   end
 
+  -- Not ctx.vm:showText(text): that takes a KEY and prints "..." for a
+  -- sentence.  core.dialogue parks the line in the text table first.
   local function say(ctx, text)
-    if ctx and ctx.vm and ctx.vm.showText then ctx.vm:showText(text) end
+    return core.dialogue.say(ctx, text)
   end
 
   mod.content.commands:register("showa_malls:counter", function(ctx, storeId)

@@ -144,6 +144,13 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
 - Facing a counter tile doubles the OBJECT lookup one cell further
   (`World:interactBody`), so an NPC directly behind a counter-collision
   tile is skipped in favor of whatever the doubled cell holds.
+- **`ctx.vm:showText` takes a text KEY, not a sentence.** It looks the key
+  up in the cache's text table and falls back to the literal `"..."` when
+  it misses, so passing prose changes state correctly and prints dots.
+  Every Showa mod says things through `core.dialogue.say`, which parks the
+  line in `vm.text` under a rotating key first. This one survived four
+  green drivers because they asserted STATE, never the render — take a
+  screenshot of any new dialogue.
 - Do NOT tick a world simulation on `map.entered`: it moves everything
   at the exact moment the player walks in to look at it. Tick on
   `map.exited` (and a step counter) so a place is as the news described
