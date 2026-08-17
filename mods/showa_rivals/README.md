@@ -6,10 +6,16 @@ take them — and when you fight one, the team you face is the team it has
 actually been building. Check the RIVALS row on the START menu to see who
 is where.
 
-Ships three of a planned cast of twenty: **ELM** (kid Professor Elm, who
-treats a battle as an experiment), **SPARKS** (the arcade rat, who really
-does take over the EKANS high-score board), and **NAGISA** (the fishing
-prodigy, who enters the Seaking Derby against you).
+All twenty ship. Among them: **ELM** (who treats a battle as an
+experiment), **SPARKS** (the arcade rat, who really does take over the
+EKANS board), **NAGISA** (the fishing prodigy, who enters the Seaking
+Derby against you), **LUNA** (photographing lights over the Ruins),
+**RUKA** (who judges your battling on presentation), **MANJI** (a manzai
+comedian whose whole strategy is misdirection), and the **Tyrogue
+triplets**, who each took a different evolution and will tell you so.
+
+Where a rival's baby Pokemon is a later generation than Gold, they carry
+its Gen 2 relative instead.
 
 Requires `showa_core`; makes optional use of `showa_arcade`,
 `showa_contests` and `showa_malls`, and runs without any of them. Part of

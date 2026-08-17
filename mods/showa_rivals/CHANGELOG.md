@@ -3,6 +3,26 @@
 All notable changes to this mod are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-08-17
+
+### Added
+
+- The full cast of twenty. Seventeen new rivals, one data file each --
+  the occult nerd at the Ruins, the idol rehearsing in the park, the
+  fashionista on the department store floors, the tinkerer on Route 34,
+  the festival cook in Azalea, the shy kid, the gardener, the shrine
+  apprentice, the prankster, the street performer, the Center helper,
+  the mall foodie, the shonen protagonist, the surfer, and the Tyrogue
+  triplets who each take a different evolution.
+- `world/venues.lua`: fourteen Johto venues and the edges between them,
+  every cell picked by scanning each map for a tile that is walkable,
+  free of objects, bg events and warps, AND has a free walkable cell
+  directly south so the rival standing there can always be talked to.
+
+### Changed
+
+- Verb dialogue goes through `core.dialogue.say`.
+
 ## [0.1.0] - 2026-08-17
 
 ### Added

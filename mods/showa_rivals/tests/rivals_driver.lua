@@ -29,7 +29,7 @@ return function(game)
   -- ------- the roster is real and placed
 
   local roster = rivals.roster()
-  check(#roster == 3, "three rivals in the roster (" .. #roster .. ")")
+  check(#roster == 20, "the whole cast is in the roster (" .. #roster .. ")")
   for _, entry in ipairs(roster) do
     local venue = core.venues.get(entry.location)
     check(venue ~= nil, entry.name .. " is at a registered venue")
@@ -125,10 +125,13 @@ return function(game)
     if found > 0 then
       U.tap(game, "a")
       U.wait(30)
-      for _ = 1, 20 do
+      -- a generous budget: real dialogue types out a character at a time,
+      -- so this needs far longer than it did when every line printed as
+      -- the three-dot fallback
+      for _ = 1, 120 do
         if not (world.vm and world.vm.busy) then break end
         U.tap(game, "a")
-        U.wait(4)
+        U.wait(6)
       end
       check(not (world.vm and world.vm.busy), "the conversation finished")
     end
