@@ -82,6 +82,10 @@ rows rather than rewriting history.**
 - [x] Ditto Ditto Revolution as arcade game 2 (seeded chart, combo scoring; original chiptune still pending) — 2026-08-17
 - [ ] Re-run the probe and record the coverage table after the next upstream sync
 
+## Dev tooling
+
+- [x] `showa_devkit`: START-menu test kit — warp to any venue, open any cabinet, stock the wallet, drive the derby and the rally, run the rival simulation, diagnostic page — 2026-08-17
+
 ## Later phases (backlog, not scheduled)
 
 - [x] The full cast of twenty rivals — one data file each, all homed on verified venue cells — 2026-08-17

@@ -1,0 +1,23 @@
+return {
+  summary = "A test menu for the Showa suite: warp to any venue, open "
+    .. "any cabinet, stock the wallet, run the rival simulation, settle "
+    .. "a derby, and read what is installed.",
+  author = "amoore2829",
+  tags = { "dev", "tool", "gen2", "showa" },
+  differences = {
+    changed = {},
+    added = {
+      "a SHOWA DEV row on the START menu opening the test kit",
+    },
+    known = {
+      "a dev tool: it hands out money and tokens and skips the cost of "
+        .. "a cabinet, so leave it off for an honest playthrough",
+      "pages for a feature mod that is not installed are hidden rather "
+        .. "than greyed out",
+      "warping puts you beside a venue's marker cell, which is not "
+        .. "always the prettiest spot in the room",
+    },
+  },
+  credits = {},
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}

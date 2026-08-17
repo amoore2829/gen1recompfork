@@ -379,5 +379,16 @@ return function(mod)
       return mod.world:warpTo(mapId, x, y, facing or "up")
     end,
     spawnNote = function() return lastSpawnNote end,
+    -- put the whole cast at one venue: the fastest way to eyeball every
+    -- rival at once without waiting for the simulation to scatter them
+    sendAll = function(venueId)
+      if not core.venues.get(venueId) then return false end
+      for _, live in pairs(state.rivals) do
+        live.location = venueId
+        live.travel = 0
+      end
+      persist()
+      return true
+    end,
   }
 end
