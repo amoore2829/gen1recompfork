@@ -7,6 +7,7 @@ local T = require("tests.modkit")
 
 local Rules = require("mods.showa_arcade.games.ekans.rules")
 local Pool = require("mods.showa_arcade.gatcha.pool")
+local Ddr = require("mods.showa_arcade.games.ddr.rules")
 
 -- ------- EKANS
 
@@ -85,6 +86,104 @@ do
     T.check(not prize.unique,
       "no second trophy while both are owned (" .. prize.id .. ")")
     if prize.unique then break end
+  end
+end
+
+-- ------- DITTO DITTO REVOLUTION
+
+do
+  -- the chart is a function of the seed alone
+  local a, b = Ddr.chart(1234), Ddr.chart(1234)
+  T.eq(#a, #b, "same seed, same number of arrows")
+  local same = true
+  for i = 1, #a do
+    if a[i].time ~= b[i].time or a[i].lane ~= b[i].lane then same = false end
+  end
+  T.check(same, "and the very same chart")
+  T.check(#Ddr.chart(1) > 20, "a song is worth playing")
+  for _, note in ipairs(a) do
+    T.check(note.lane >= 1 and note.lane <= 4, "every arrow has a real lane")
+    T.check(note.time >= Ddr.LEAD_IN, "and lands after the lead-in")
+  end
+
+  -- stepping exactly on the beat is PERFECT
+  local g = Ddr.new(7)
+  local first = g.notes[1]
+  g.t = first.time
+  T.eq(Ddr.press(g, first.lane), "PERFECT", "on the beat is PERFECT")
+  T.eq(g.combo, 1, "and starts a combo")
+  T.eq(g.score, Ddr.SCORE.PERFECT, "and scores")
+
+  -- a little early or late is GOOD
+  local g2 = Ddr.new(7)
+  local n2 = g2.notes[2]
+  g2.t = n2.time - Ddr.GOOD
+  T.eq(Ddr.press(g2, n2.lane), "GOOD", "just inside the window is GOOD")
+
+  -- outside the window claims nothing, and is not punished
+  local g3 = Ddr.new(7)
+  local n3 = g3.notes[1]
+  g3.t = n3.time - Ddr.GOOD - 5
+  T.eq(Ddr.press(g3, n3.lane), nil, "too early claims no arrow")
+  T.eq(g3.counts.MISS, 0, "and stepping on nothing is not a miss")
+
+  -- one arrow cannot be claimed twice
+  local g4 = Ddr.new(7)
+  local n4 = g4.notes[1]
+  g4.t = n4.time
+  Ddr.press(g4, n4.lane)
+  local before = g4.score
+  Ddr.press(g4, n4.lane)
+  T.eq(g4.score, before, "an arrow already stepped on scores nothing more")
+
+  -- letting one go by is a miss, exactly once
+  local g5 = Ddr.new(7)
+  local n5 = g5.notes[1]
+  g5.t = n5.time + Ddr.GOOD
+  Ddr.step(g5)
+  T.eq(g5.counts.MISS, 1, "an arrow that passes is missed")
+  Ddr.step(g5)
+  T.eq(g5.counts.MISS, 1, "and is not missed a second time")
+  T.eq(g5.combo, 0, "a miss breaks the combo")
+
+  -- a perfect run: every arrow claimed, and the song ends
+  local g6 = Ddr.new(99)
+  local total = #g6.notes
+  for _ = 1, 2000 do
+    for lane = 1, 4 do
+      local claim, gap = Ddr.claimable(g6, lane)
+      if claim and gap <= Ddr.PERFECT then Ddr.press(g6, lane) end
+    end
+    Ddr.step(g6)
+    if g6.done then break end
+  end
+  T.eq(g6.done, true, "the song ends on its own")
+  T.eq(g6.counts.MISS, 0, "a perfect run misses nothing")
+  T.eq(g6.counts.PERFECT, total, "and claims every arrow")
+  T.eq(g6.best, total, "with one unbroken combo")
+  T.check(g6.score > total * Ddr.SCORE.PERFECT,
+    "which pays a combo bonus on top")
+
+  -- and a run that never touches the pad ends too, all misses
+  local g7 = Ddr.new(99)
+  local count = #g7.notes
+  for _ = 1, 2000 do
+    Ddr.step(g7)
+    if g7.done then break end
+  end
+  T.eq(g7.done, true, "an untouched song still ends")
+  T.eq(g7.counts.MISS, count, "having missed everything")
+  T.eq(g7.score, 0, "for no score")
+
+  -- the view only ever asks for arrows that are actually on screen
+  local g8 = Ddr.new(3)
+  for _ = 1, 200 do
+    Ddr.step(g8)
+    for _, note in ipairs(Ddr.visible(g8)) do
+      T.check(note.progress <= 1 and note.progress > -0.2,
+        "a drawn arrow is inside its lane")
+      T.check(note.lane >= 1 and note.lane <= 4, "and in a real lane")
+    end
   end
 end
 

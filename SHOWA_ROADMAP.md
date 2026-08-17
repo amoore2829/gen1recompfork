@@ -35,7 +35,7 @@ rows rather than rewriting history.**
 - [x] Suites: 2017 rules checks + 12 headless + end-to-end Gold driver (18 checks, 0 failures) — 2026-08-17
 - [x] validate + gen2check clean on both mods — 2026-08-17
 - [x] FEATURES.md rows — 2026-08-17
-- [ ] DDR as arcade game 2 (moved to M5 as planned)
+- [x] DDR as arcade game 2 — landed in M5 — 2026-08-17
 
 ## M2 — showa_contests
 
@@ -79,7 +79,7 @@ rows rather than rewriting history.**
 
 - [x] Honest `mod.card` known-limitations ledgers, READMEs, CHANGELOGs across the suite — 2026-08-17
 - [x] FEATURES.md written on `dev` with the suite, conventions, and the Windows test recipe — 2026-08-17
-- [ ] Ditto-Ditto-Revolution (DDR) as arcade game 2 (original chiptune)
+- [x] Ditto Ditto Revolution as arcade game 2 (seeded chart, combo scoring; original chiptune still pending) — 2026-08-17
 - [ ] Re-run the probe and record the coverage table after the next upstream sync
 
 ## Later phases (backlog, not scheduled)

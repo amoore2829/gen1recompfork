@@ -4,6 +4,7 @@
 -- proved: spawned NPCs whose scriptKey row lists dispatch this mod's own
 -- verbs through Gold's VM.
 local EkansGame = require("mods.showa_arcade.games.ekans.game")
+local DdrGame = require("mods.showa_arcade.games.ddr.game")
 local Pool = require("mods.showa_arcade.gatcha.pool")
 local GatchaScreen = require("mods.showa_arcade.gatcha.screen")
 
@@ -55,6 +56,7 @@ return function(mod)
   -- ------- screens
 
   mod.content.screens:register("ShowaEkans", EkansGame(core))
+  mod.content.screens:register("ShowaDdr", DdrGame(core))
   mod.content.screens:register("ShowaGatcha", GatchaScreen)
 
   -- ------- the cabinet verbs
@@ -112,6 +114,28 @@ return function(mod)
     return "end"
   end)
 
+  mod.content.commands:register("showa_arcade:ddr", function(ctx)
+    stats.ddr = (stats.ddr or 0) + 1
+    if not core.wallet.spend(TOKEN, PLAY_COST) then
+      say(ctx, ("DITTO DITTO REVOLUTION\nwants %d GAME TOKEN.")
+        :format(PLAY_COST))
+      return "end"
+    end
+    local ok, err = pcall(function()
+      mod.ui.push(mod.game, "ShowaDdr", {
+        onDone = function(score)
+          if not submitScore("ddr", score) and score > 0 then
+            core.news.post(("Somebody danced %d points at the arcade.")
+              :format(score))
+          end
+        end,
+      })
+    end)
+    if ok then stats.pushes = stats.pushes + 1
+    else stats.lastError = tostring(err) end
+    return "end"
+  end)
+
   mod.content.commands:register("showa_arcade:gatcha", function(ctx)
     stats.gatcha = stats.gatcha + 1
     if not core.wallet.spend(TOKEN, GATCHA_COST) then
@@ -152,6 +176,9 @@ return function(mod)
     ekans = { sprite = "SPRITE_GENTLEMAN", x = 9, y = 4,
       movement = 6, radius = { x = 0, y = 0 }, hours = { -1, -1 },
       scriptKey = { { "showa_arcade:ekans" } } },
+    ddr = { sprite = "SPRITE_TEACHER", x = 3, y = 4,
+      movement = 6, radius = { x = 0, y = 0 }, hours = { -1, -1 },
+      scriptKey = { { "showa_arcade:ddr" } } },
     gatcha = { sprite = "SPRITE_LASS", x = 15, y = 4,
       movement = 6, radius = { x = 0, y = 0 }, hours = { -1, -1 },
       scriptKey = { { "showa_arcade:gatcha" } } },
