@@ -113,6 +113,19 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
   `game.data.gen2Maps` the live map table.
 - ROMs are gitignored (`*.gb`, `*.gbc`, `*.sav`) — three ROMs sit at repo
   root; **never** commit them or ROM-derived bytes (modkit lint enforces).
+- **A Gen 2 warp only fires where the TILE says so.**
+  `World:checkWarpOnArrive` tests the arrival cell's collision through
+  `Permissions.isWarpCollision` (`0x60`, `0x68`, or high nybble `7`), so a
+  perfectly-shaped warp record on plain floor is inert. Put warps on
+  blocks that carry the collision: in TILESET_MART, block 42
+  (`{0,0,112,112}`) is the carpet-down exit mat and block 1
+  (`{122,7,0,0}`) is a staircase on its top-left cell. Carpet warps
+  additionally need the player to hold that direction; staircases are
+  immediate.
+- When registering a new map, crib an existing map's `blocks` list rather
+  than inventing block ids — the ids are tileset-specific and a wrong one
+  renders garbage. `OLIVINE_MART` (6x4, TILESET_MART) is the small-room
+  template this suite uses.
 - `tests/drivers/util.lua`'s `U.hold` leaves `input.state[btn]` latched
   after the loop — clear the direction keys and wait for
   `world.player.moving == false` before reading player positions, or every
@@ -197,7 +210,7 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
   truncates `ipairs`, so a "malformed row is skipped" test written with
   an embedded nil tests Lua, not the guard.
 
-**Next session picks up at M3 (`showa_malls`)**: Olivine shopping-street
+**Superseded — M3 landed. (Was: next session picks up at M3.)**: Olivine shopping-street
 mall (new `maps:register` interiors, ≤7×6 blocks/floor, NPCs at y≥4),
 tunnel maps linking Goldenrod Underground to the mall basement, and the
 per-store sticker rally with the `ShowaStickerAlbum` screen. Design lives
@@ -205,3 +218,24 @@ in the plan (`~/.claude/plans/i-would-liek-to-melodic-hejlsberg.md`) and
 the roadmap. Note M3 is the first milestone that REGISTERS new maps
 rather than spawning into vanilla ones — expect the render-verification
 step (house rule #3) to matter most here.
+
+### 2026-08-17 (M3) — showa_malls lands
+
+- `mods/showa_malls` 0.1.0: three registered maps (SHOWA_MALL_1F / 2F /
+  TUNNEL) on OLIVINE_MART's verified block layout, with real staircase
+  blocks substituted at the warp cells; greeters in Olivine City (17,18)
+  and Goldenrod Underground (5,13); a four-counter stamp rally with the
+  ShowaStickerAlbum screen and a full-book prize.
+- The debugging lesson is now the biggest new Gotcha above: warps need a
+  warping TILE, not just a warp record. The rules suite now asserts it for
+  every warp, so the whole suite inherits the guard.
+- 69 pure checks, 10 headless, mall driver 16 checks / 0 failures,
+  validate + gen2check clean.
+
+**Next session picks up at M4 (`showa_rivals`)** — the last Phase 1
+milestone: the pure `sim/` framework (venue-graph scheduled appearances,
+seeded and deterministic), one trainer class per rival with a
+`trainer.party` substitution, and the first three rivals (Elm/Togepi,
+Pichu arcade rat wired to showa_arcade's score exports, Azurill wired to
+showa_contests' `registerCompetitor`). Both integration seams it needs are
+already shipped and tested.

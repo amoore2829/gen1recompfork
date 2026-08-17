@@ -1,0 +1,30 @@
+return {
+  summary = "An Olivine shopping arcade over two floors, joined to "
+    .. "Goldenrod's underground by a chikagai passage, with a stamp "
+    .. "rally at every counter and a set prize at the info desk.",
+  author = "amoore2829",
+  tags = { "maps", "shopping", "gen2", "showa" },
+  differences = {
+    changed = {},
+    added = {
+      "three new maps: SHOWA_MALL_1F, SHOWA_MALL_2F and the "
+        .. "SHOWA_MALL_TUNNEL chikagai passage, with working staircases "
+        .. "and a street exit",
+      "greeters on the Olivine shopping block and in Goldenrod "
+        .. "Underground who show you in",
+      "a four-counter stamp rally, a STAMPS album on the START menu, "
+        .. "and 100 MALL POINTS for a full book",
+    },
+    known = {
+      "the arcade is reached through its greeters rather than a "
+        .. "shopfront stamped onto Olivine City: patching a vanilla "
+        .. "city's blocks is the one change this suite cannot verify "
+        .. "without eyes on the render",
+      "all three rooms reuse OLIVINE_MART's block layout, so they read "
+        .. "as shops rather than as distinct storefronts",
+      "MALL POINTS have nothing to spend them on yet",
+    },
+  },
+  credits = {},
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}
