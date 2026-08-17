@@ -181,8 +181,27 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
   plays; per-identity save persistence in driver checks.
 - Both mods committed on `feature/showa-m1`, merged to `dev`, pushed.
 
-**Next session picks up at M2 (`showa_contests`)**: fish derby at Lake of
-Rage first (judge NPC + `encounter.fishing` weighting + size records),
-then wrap the engine's own Bug Contest (`bug_contest.scored`). The
-framework files and design live in the plan
-(`~/.claude/plans/i-would-liek-to-melodic-hejlsberg.md`) and the roadmap.
+### 2026-08-17 (later still) — M2: showa_contests lands
+
+- `mods/showa_contests` 0.1.0: Seaking Derby judge at Lake of Rage
+  (18,29 — south shore, verified free against the map's object/bgEvent/
+  collision layers), pure `judging.lua` (size from level+DVs, SEAKING
+  bonus) and `session.lua` (start/record/finish/standings), persistent
+  fish+bug record book, news coverage, and the
+  `registerCompetitor` seam showa_rivals will fill.
+- Bug Contest is wrapped, not rebuilt: the engine runs its own contest
+  and `bug_contest.scored` feeds our record book.
+- 76 pure checks, 11 headless, derby driver 12 checks / 0 failures,
+  validate + gen2check clean. Merged to `dev`, pushed.
+- Test-writing gotcha worth keeping: a `nil` hole in a Lua array literal
+  truncates `ipairs`, so a "malformed row is skipped" test written with
+  an embedded nil tests Lua, not the guard.
+
+**Next session picks up at M3 (`showa_malls`)**: Olivine shopping-street
+mall (new `maps:register` interiors, ≤7×6 blocks/floor, NPCs at y≥4),
+tunnel maps linking Goldenrod Underground to the mall basement, and the
+per-store sticker rally with the `ShowaStickerAlbum` screen. Design lives
+in the plan (`~/.claude/plans/i-would-liek-to-melodic-hejlsberg.md`) and
+the roadmap. Note M3 is the first milestone that REGISTERS new maps
+rather than spawning into vanilla ones — expect the render-verification
+step (house rule #3) to matter most here.

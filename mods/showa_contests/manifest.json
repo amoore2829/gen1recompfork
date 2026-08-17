@@ -1,0 +1,17 @@
+{
+  "id": "showa_contests",
+  "name": "Showa Contests",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "CONTENT",
+  "games": ["gen2"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "dependencies": ["showa_core@^0.1.0"],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "permissions": [],
+  "description": "The Lake of Rage Seaking Derby: a judge on the south shore runs catch-the-biggest-fish sessions, with a standings board, persistent records, and town-news coverage. Also wraps Gold's own Bug Catching Contest scores into the same record book."
+}
