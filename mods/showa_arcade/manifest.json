@@ -1,0 +1,17 @@
+{
+  "id": "showa_arcade",
+  "name": "Showa Arcade",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "CONTENT",
+  "games": ["gen2"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 100,
+  "dependencies": ["showa_core@^0.1.0"],
+  "optional_dependencies": [],
+  "conflicts": [],
+  "permissions": ["engine_internals"],
+  "description": "The Goldenrod Game Corner becomes a Showa-era arcade: an EKANS snake cabinet, a capsule-toy gatcha machine, a token clerk, and a high-score board. First drop of the Showa Johto suite's arcade."
+}
