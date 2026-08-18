@@ -27,3 +27,8 @@ All notable changes to this mod are documented here. The format follows
 - Fixed a crash on the B button: `ListMenu`'s `onCancel` takes no arguments
   and runs after the menu has already popped itself, so the kit's second
   `menu:close()` indexed nil.
+
+## 0.1.2 — 2026-08-17
+
+- New **PARTIES** page: walk into today's party, read the guest list, swap an
+  item or trade a POKEMON without waiting three in-game days for one.

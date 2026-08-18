@@ -52,11 +52,13 @@ do
   T.check(not has(bare, "stamps"), "no rally without malls")
   T.check(not has(bare, "rivals"), "no roster without rivals")
   T.check(not has(bare, "cups"), "no cup circuit without tournaments")
+  T.check(not has(bare, "parties"), "and no party page without parties")
 
   local full = Menu.root(ctx({ arcade = true, contests = true,
-                               malls = true, rivals = true, cups = true }))
+                               malls = true, rivals = true, cups = true,
+                               parties = true }))
   for _, id in ipairs({ "warp", "games", "wallet", "derby", "stamps",
-                        "rivals", "cups", "status", "close" }) do
+                        "rivals", "cups", "parties", "status", "close" }) do
     T.check(has(full, id), "the full suite offers " .. id)
   end
 
@@ -117,6 +119,32 @@ do
     "and names the cup when there is one")
 end
 
+-- ------- the party page
+
+do
+  local quiet = Menu.parties(ctx({ parties = true },
+    { nextParty = { inDays = 2 } }))
+  T.check(has(quiet, "info"), "a quiet day says so")
+  T.eq(quiet[#quiet].id, "back", "with a way back")
+
+  local live = Menu.parties(ctx({ parties = true },
+    { party = { theme = "TRADE", guests = 5 } }))
+  T.check(has(live, "party:go"), "a party can be walked into")
+  T.check(has(live, "party:who"), "the guest list can be read")
+  T.check(has(live, "party:swap"), "an item swapped")
+  T.check(has(live, "party:trade"), "and a mon traded")
+  T.eq(live[2].right, "5", "with a head count")
+
+  local function rightOf(rows, id)
+    for _, row in ipairs(rows) do if row.id == id then return row.right end end
+  end
+  T.eq(rightOf(Menu.root(ctx({ parties = true })), "parties"), "NONE",
+    "with no party on, the root says NONE")
+  T.eq(rightOf(Menu.root(ctx({ parties = true },
+    { party = { theme = "SWAP", guests = 5 } })), "parties"), "SWAP",
+    "and names the theme when there is one")
+end
+
 -- ------- warping lists every venue, sorted, with a way back
 
 do
@@ -134,7 +162,7 @@ end
 do
   for name, build in pairs(Menu.PAGES) do
     local rows = build(ctx({ arcade = true, contests = true, malls = true,
-                             rivals = true, cups = true }))
+                             rivals = true, cups = true, parties = true }))
     T.check(#rows >= 1, name .. " has rows")
     T.eq(rows[#rows].id, "back", name .. " ends with BACK")
   end
@@ -173,6 +201,7 @@ do
   T.eq(seen["CONTESTS"], "--", "contests are not")
   T.eq(seen["RIVALS"], "--", "nor rivals")
   T.eq(seen["CUPS"], "--", "nor tournaments")
+  T.eq(seen["PARTIES"], "--", "nor parties")
   T.eq(seen["VENUES"], "3", "and the venue count is real")
 end
 
@@ -187,8 +216,10 @@ end
 do
   local WIDTH = Menu.WIDTH
   local full = ctx({ arcade = true, contests = true, malls = true,
-                     rivals = true, cups = true }, {
-    cup = { short = "MASTER", round = 99, alive = true }, rivals = {
+                     rivals = true, cups = true, parties = true }, {
+    cup = { short = "MASTER", round = 99, alive = true },
+    party = { theme = "TRADE", guests = 5 },
+    nextParty = { inDays = 999 }, rivals = {
     { id = "magby", name = "TAKESHI", location = "CHIKAGAI",
       locationLabel = "CHIKAGAI PASSAGE", level = 100 },
     { id = "tyrogue_chan", name = "RYU", location = "ECRUTEAK",

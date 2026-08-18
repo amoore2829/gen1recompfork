@@ -9,12 +9,13 @@ local Menu = {}
 
 -- ctx = {
 --   have  = { arcade = bool, contests = bool, malls = bool, rivals = bool,
---             cups = bool },
+--             cups = bool, parties = bool },
 --   venues = { { id, label, map }, ... },
 --   tokens = n, mallPoints = n, money = n,
 --   rivals = { { id, name, location, level }, ... },
 --   derbyOpen = bool, stickers = "2/4",
 --   cup = { short = "ROOKIE", round = 1, alive = true } | nil,
+--   party = { theme = "TRADE", guests = 5, inDays = 0 } | nil,
 -- }
 
 function Menu.root(ctx)
@@ -39,6 +40,10 @@ function Menu.root(ctx)
   if ctx.have.cups then
     rows[#rows + 1] = { id = "cups", label = "CUPS",
                         right = ctx.cup and ctx.cup.short or "NONE" }
+  end
+  if ctx.have.parties then
+    rows[#rows + 1] = { id = "parties", label = "PARTIES",
+                        right = ctx.party and ctx.party.theme or "NONE" }
   end
   rows[#rows + 1] = { id = "status", label = "DIAGNOSTIC", right = "" }
   rows[#rows + 1] = { id = "close", label = "CLOSE", right = "" }
@@ -144,6 +149,29 @@ function Menu.cups(ctx)
   return rows
 end
 
+-- The party circuit.  A party is a function of the DAY, so the useful thing
+-- a test kit can offer is a look at who is on and a warp into the room.
+function Menu.parties(ctx)
+  local rows = {}
+  if ctx.party then
+    rows[#rows + 1] = { id = "party:go", label = "GO TO PARTY",
+                        right = ctx.party.theme }
+    rows[#rows + 1] = { id = "party:who", label = "WHO IS THERE",
+                        right = tostring(ctx.party.guests or 0) }
+    rows[#rows + 1] = { id = "party:swap", label = "SWAP AN ITEM" }
+    rows[#rows + 1] = { id = "party:trade", label = "TRADE A MON" }
+  else
+    rows[#rows + 1] = { id = "info", label = "NO PARTY TODAY",
+                        right = ctx.party and "" or "--" }
+    if ctx.nextParty then
+      rows[#rows + 1] = { id = "info", label = "NEXT ONE",
+                          right = "IN " .. tostring(ctx.nextParty.inDays) }
+    end
+  end
+  rows[#rows + 1] = { id = "back", label = "BACK", right = "" }
+  return rows
+end
+
 function Menu.status(ctx)
   local rows = {}
   local function row(label, ok)
@@ -156,6 +184,7 @@ function Menu.status(ctx)
   row("MALLS", ctx.have.malls)
   row("RIVALS", ctx.have.rivals)
   row("CUPS", ctx.have.cups)
+  row("PARTIES", ctx.have.parties)
   rows[#rows + 1] = { id = "info", label = "VENUES",
                       right = tostring(#ctx.venues) }
   rows[#rows + 1] = { id = "info", label = "CAST",
@@ -167,7 +196,7 @@ end
 Menu.PAGES = {
   warp = Menu.warp, games = Menu.games, wallet = Menu.wallet,
   derby = Menu.derby, stamps = Menu.stamps, rivals = Menu.rivals,
-  cups = Menu.cups, status = Menu.status,
+  cups = Menu.cups, parties = Menu.parties, status = Menu.status,
 }
 
 return Menu

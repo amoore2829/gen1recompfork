@@ -29,3 +29,13 @@ All notable changes to this mod are documented here. The format follows
   record so the engine's party builder gives the mons their moves, and takes
   a battle portrait from the player's own cache table for a named vanilla
   class rather than from a path a mod would have to spell.
+
+## 0.3.0 — 2026-08-17
+
+- New `core.placement`: finding somewhere for a spawned NPC to stand. A cell
+  being free of other NPCs is **not** enough — a search that skips the
+  walkability check stands people on top of the furniture, which is what it
+  looks like on screen. Rings outward from the wanted cell, vetoing
+  unwalkable, occupied and already-claimed cells, with an optional preferred
+  direction. `showa_rivals` and `showa_parties` both use it.
+- `core.trainers.BLOCKS` gains a slice for `showa_parties`.

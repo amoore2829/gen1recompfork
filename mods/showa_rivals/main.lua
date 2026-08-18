@@ -281,28 +281,24 @@ return function(mod)
       local venue = core.venues.get(live.location)
       local wanted = venue and mapId and venue.map == mapId
       if wanted and not spawned[id] then
-        -- A venue's own cell may already be somebody's -- the derby
-        -- judge stands on LAKE_DERBY's -- so step aside rather than
-        -- stacking two NPCs on one tile, where only the first is
-        -- reachable.
+        -- A venue's own cell may already be somebody's -- the derby judge
+        -- stands on LAKE_DERBY's -- so step aside rather than stacking two
+        -- NPCs on one tile, where only the first is reachable.  The search
+        -- checks WALKABILITY as well as occupancy: a cell being free of
+        -- NPCs is not enough, and skipping that check is what puts people
+        -- on top of the shelves.
         local ok, npcId = pcall(function()
-          local overworld = mod.world:overworld()
-          local bx, by = venue.x or 5, venue.y or 3
-          for _, offset in ipairs({ { 0, 0 }, { 1, 0 }, { -1, 0 },
-                                    { 0, 1 }, { 0, -1 } }) do
-            local cx, cy = bx + offset[1], by + offset[2]
-            local taken = overworld and overworld.npcAt
-              and overworld:npcAt(cx, cy)
-            if not taken then
-              return mod.world:spawnNpc(venue.map, {
-                sprite = def.sprite, x = cx, y = cy,
-                movement = 6, radius = { x = 0, y = 0 },
-                hours = { -1, -1 },
-                scriptKey = { { "showa_rivals:talk", id } },
-              })
-            end
-          end
-          return nil
+          local taken = {}
+          local free = core.placement.forWorld(mod.world, taken)
+          local x, y = core.placement.pick(free, venue.x or 5, venue.y or 3,
+            { radius = 3 })
+          if not x then return nil end
+          return mod.world:spawnNpc(venue.map, {
+            sprite = def.sprite, x = x, y = y,
+            movement = 6, radius = { x = 0, y = 0 },
+            hours = { -1, -1 },
+            scriptKey = { { "showa_rivals:talk", id } },
+          })
         end)
         if ok and npcId then
           spawned[id] = npcId

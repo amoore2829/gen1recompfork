@@ -28,6 +28,7 @@ local Trainers = {}
 Trainers.BLOCKS = {
   showa_rivals      = { first = 100, last = 129 },
   showa_tournaments = { first = 130, last = 179 },
+  showa_parties     = { first = 180, last = 209 },
 }
 
 -- Gold's own classes, so a claim can refuse to shadow one.

@@ -52,6 +52,10 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
   showa_malls, showa_rivals 0.3.0, showa_tournaments 0.1.0, showa_devkit
   0.1.1) plus the probe. 15 suites, ~44,900 checks, every driver at zero
   failures, `modkit validate` + `gen2check` clean on all eight.
+- Eight suite mods on `dev` (showa_core 0.3.0, showa_arcade, showa_contests,
+  showa_malls, showa_rivals 0.3.1, showa_tournaments 0.1.0, showa_parties
+  0.1.0, showa_devkit 0.1.2) plus the probe. 17 suites, ~45,700 checks, every
+  driver at zero failures, `modkit validate` + `gen2check` clean on all nine.
 - `mods/gen2_api_probe` DONE: headless suite **10/10**, Gold boot driver
   **16/16**, `modkit validate` + `gen2check` clean. The driver proves the
   full mod-NPC dialogue chain on Gold end to end.
@@ -151,8 +155,12 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
 - **A ListMenu row shares 17 glyph slots** between its label (drawn from
   x=16) and its right column (right-aligned to x=152). Anything wider
   collides into one mashed word. Budget 16 and the gap stays visible;
-  `Menu.WIDTH` in showa_devkit pins it in a test. Two collisions shipped
-  past green suites here — screenshot any new menu.
+  `Menu.WIDTH` in showa_devkit, showa_tournaments and showa_parties pins it
+  in a test. FOUR collisions have shipped past green suites here —
+  "SEAKING DERBYSHUT", "SPARKS Lv6CHIKAGAI", "SEE THE BOARDOKIE" — so
+  screenshot any new menu, and put the rows in a pure module with a width
+  test. That test earns its keep: showa_parties' caught "THEY WANT" plus a
+  ten-letter species BEFORE it ever drew.
 - **`ctx.vm:showText` takes a text KEY, not a sentence.** It looks the key
   up in the cache's text table and falls back to the literal `"..."` when
   it misses, so passing prose changes state correctly and prints dots.
@@ -204,6 +212,23 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
 - **Gold's font has no "$".** It drops the character and logs
   `font: no glyph for "$"`. The currency glyph is charmap.asm's yen,
   `"Â¥"` (what `src/ui/gen2/Chrome.lua` and MartMenu price with).
+- **A spawned NPC needs a WALKABLE cell, not just an empty one.** A search
+  that only asks `overworld:npcAt` puts people on top of the furniture, and
+  they draw there quite happily -- five party guests stood on the mall's
+  shelves for a whole green driver run. `map:isWalkableCell(x, y)` takes the
+  SAME coordinates as `spawnNpc` (a 6x4-block map is 12x8 cells), and
+  `core.placement` is the shared ring search that checks walkability,
+  occupancy and a per-pass `taken` set together. Caught by screenshot, again.
+- **A driver mashing A in a battle can hang in a submenu.** `battle.phase`
+  goes to `"submenu"` when the party list or the pack is pushed OVER the
+  battle screen, and which button leaves depends on why it opened -- a
+  voluntary list cancels on B, a FORCED switch cannot be cancelled and wants
+  A. Press A, and fall back to B when the phase has not moved for ~8 tries.
+  Simplest of all: give the driver ONE mon, so a faint is a whiteout rather
+  than a forced-switch menu.
+- An opponent team that scales to the player's best mon makes every driver
+  fight level-even, and therefore slow and random. Species is the lever: a
+  fully evolved starter against common-or-garden mons finishes.
 - When a driver closes a minigame's results card, do NOT mash extra A
   presses while still facing the cabinet — each one is another paid play.
   Driver checks on `mod.save`-backed values must be relative deltas: the
@@ -368,3 +393,27 @@ game 2, FEATURES.md rows for the suite, and then the Phase 2 backlog
 - Suites: 1837 rules + 123 headless + 102 menu, Gold driver 28 checks / 0
   failures, validate + gen2check clean. showa_devkit 0.1.1 gains a CUPS
   page so the whole circuit can be driven from the START menu.
+
+### 2026-08-17 (M7) — showa_parties, and NPC placement
+
+- `mods/showa_parties` 0.1.0: a party every third day, rotating around the
+  venues the rest of the suite registers, with three themes that change who
+  turns up. Five guests, each with one thing on their mind: a friendly
+  battle, an item swap, or a real Pokemon trade. The whole guest list is a
+  pure function of the day and the room, so the crowd is the crowd the news
+  announced and leaving the room does not reroll it.
+- The trade is NOT hand-rolled: `src/core/gen2/NpcTrade.lua` is the cart's
+  own routine and already gets the level carry-over, the stat recompute, the
+  party closing up, the mail slot shifting and the #DEX tick right. Calling
+  it is the one reason this mod declares `engine_internals`.
+- **The user caught a real bug from a screenshot**: guests standing on the
+  mall's shelves. The spawn search only asked whether a cell held another
+  NPC, never whether it was walkable -- and `showa_rivals` had the same hole.
+  `core.placement` (showa_core 0.3.0) is the shared fix and both mods now go
+  through it. In Gotchas above.
+- Two driver lessons, also in Gotchas: an A-mash can hang in a battle
+  `"submenu"` (the pushed party/pack screen), and an opponent that scales to
+  the player is always level-even, so species is the lever that makes a
+  driver fight finish.
+- Suites: 582 rules + 123 headless, Gold driver 34 checks / 0 failures,
+  validate + gen2check clean. showa_devkit 0.1.2 gains a PARTIES page.

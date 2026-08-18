@@ -101,15 +101,33 @@ rows rather than rewriting history.**
 - [x] `showa_rivals` 0.3.0: every rival class is now fightable (numeric index, real roster, portrait) — 2026-08-17
 - [x] Fixed: rival parties handed back from the `trainer.party` hook arrived with NO MOVES; the roster goes into the class record instead — 2026-08-17
 
+## M7 — showa_parties (the neighbourhood meet-up)
+
+- [x] Pure schedule: a party every third day, rotating venue and theme — 2026-08-17
+- [x] Pure guest generation: five guests drawn from the day and the room, names unique per party — 2026-08-17
+- [x] Item exchange ("I want X, I'll give you Y") with bag and stack-limit rules — 2026-08-17
+- [x] **Real POKEMON trades** through the engine's own `NpcTrade.perform`: level carried over, stats recomputed, nickname + OT set, #DEX ticked — 2026-08-17
+- [x] Friendly trainer battles against guests, scaled to the player — 2026-08-17
+- [x] A host with the guest list, tonight's theme and the countdown; news announces the next party — 2026-08-17
+- [x] Suites: 582 rules + 123 headless + Gold driver (34 checks, 0 failures) — 2026-08-17
+- [x] validate + gen2check clean — 2026-08-17
+- [ ] A time-of-day window (a party currently lasts the whole day)
+- [ ] Guests who react to your #DEX, badges or trophies
+
+## Placement (landed with M7, fixes every mod that spawns an NPC)
+
+- [x] `showa_core` 0.3.0 `core.placement`: ring search that vetoes unwalkable, occupied and already-claimed cells — 2026-08-17
+- [x] Fixed: party guests and rivals stood **on the shelves** — the spawn search only checked for other NPCs, never walkability — 2026-08-17
+
 ## Dev tooling
 
 - [x] `showa_devkit`: START-menu test kit — warp to any venue, open any cabinet, stock the wallet, drive the derby and the rally, run the rival simulation, diagnostic page — 2026-08-17
 - [x] `showa_devkit` 0.1.1: CUPS page (enter a cup, win or lose your match, arm the referee, withdraw); fixed a crash on the B button — 2026-08-17
+- [x] `showa_devkit` 0.1.2: PARTIES page (walk into today's party, read the guest list, swap an item, trade a mon) — 2026-08-17
 
 ## Later phases (backlog, not scheduled)
 
 - [x] The full cast of twenty rivals — one data file each, all homed on verified venue cells — 2026-08-17
-- [ ] Animal-Jam-style parties (battles, rare trades, "looking for item X" exchanges)
 - [ ] Safari zone
 - [ ] More arcade games: Hoppip jump, Slowpoke fishing, poke pinball, Munchlax pac-man vs Gastlys, Lickitung conveyor sushi, guitar hero, Rapidash derby, Ekans snake variants
 - [ ] Gatcha pool expansions (Pokémon prizes)

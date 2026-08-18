@@ -30,6 +30,7 @@ return function(mod)
       malls = ex("showa_malls"),
       rivals = ex("showa_rivals"),
       cups = ex("showa_tournaments"),
+      parties = ex("showa_parties"),
     }
   end
 
@@ -72,11 +73,21 @@ return function(mod)
                 round = live.round, alive = live.alive }
       end
     end
+    local partyNow, partyNext
+    if p.parties then
+      local live = p.parties.today()
+      if live then
+        partyNow = { theme = (live.label or ""):sub(1, 5),
+                     guests = live.guests }
+      end
+      local upcoming = p.parties.next()
+      if upcoming then partyNext = { inDays = upcoming.inDays } end
+    end
     local save = mod.game and mod.game.save
     return {
       have = { arcade = p.arcade ~= nil, contests = p.contests ~= nil,
                malls = p.malls ~= nil, rivals = p.rivals ~= nil,
-               cups = p.cups ~= nil },
+               cups = p.cups ~= nil, parties = p.parties ~= nil },
       venues = venues,
       rivals = roster,
       tokens = core.wallet.get("ARCADE_TOKEN"),
@@ -86,6 +97,8 @@ return function(mod)
       stickers = stickers,
       cups = cupList,
       cup = cup,
+      party = partyNow,
+      nextParty = partyNext,
     }, p
   end
 
@@ -214,6 +227,52 @@ return function(mod)
     return nil
   end
 
+  -- The party circuit, without waiting three in-game days for one.
+  local function parties(action)
+    local p = parts()
+    if not p.parties then return "parties not installed" end
+    local live = p.parties.today()
+    if not live then
+      local upcoming = p.parties.next()
+      return upcoming and ("next party in " .. upcoming.inDays .. " days")
+        or "no parties planned"
+    end
+    if action == "go" then
+      local ok, why = p.parties.debug.warp()
+      if ok == false then return tostring(why) end
+      p.parties.debug.refresh()
+      return "at the " .. tostring(live.label)
+    elseif action == "who" then
+      local names = {}
+      for _, guest in ipairs(p.parties.guests()) do
+        names[#names + 1] = guest.name
+      end
+      return table.concat(names, " ")
+    elseif action == "swap" then
+      for _, guest in ipairs(p.parties.guests()) do
+        if guest.role == "swapper" then
+          -- stock the bag first, or the swap is a refusal every time
+          local save = mod.game and mod.game.save
+          if save then
+            save.inventory = save.inventory or {}
+            save.inventory[guest.wants] = (save.inventory[guest.wants] or 0) + 1
+          end
+          local swap = p.parties.debug.swap(guest.index)
+          return swap and ("gave " .. swap.gave) or "no swap"
+        end
+      end
+      return "no swapper here"
+    elseif action == "trade" then
+      for _, guest in ipairs(p.parties.guests()) do
+        if guest.role == "trader" then
+          return tostring(p.parties.debug.trade(guest.index))
+        end
+      end
+      return "no trader here"
+    end
+    return nil
+  end
+
   local function gotoRival(rivalId)
     local p = parts()
     if not p.rivals then return "rivals not installed" end
@@ -241,7 +300,7 @@ return function(mod)
     local titles = { root = "SHOWA DEV", warp = "WARP TO", games = "CABINETS",
                      wallet = "WALLET", derby = "DERBY", stamps = "STAMPS",
                      rivals = "RIVALS", cups = "CUPS",
-                     status = "DIAGNOSTIC" }
+                     parties = "PARTIES", status = "DIAGNOSTIC" }
     return titles[page] or "SHOWA DEV"
   end
 
@@ -258,6 +317,7 @@ return function(mod)
       if arg == "tick" then return tickRivals(10) end
       if arg == "gather" then return gatherRivals() end
     end
+    if verb == "party" then return parties(arg) end
     if verb == "cup" then
       local action, which = arg:match("^(%a+):(.+)$")
       if action then return cups(action, which) end
@@ -340,4 +400,5 @@ return function(mod)
   mod.exports.tickRivals = tickRivals
   mod.exports.stockWallet = stockWallet
   mod.exports.cups = cups
+  mod.exports.parties = parties
 end

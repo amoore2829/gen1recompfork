@@ -12,13 +12,14 @@ the gotchas each cost a debugging cycle once).
 
 | Feature | Kind | Version | Status | Lives in |
 |---|---|---|---|---|
-| [Showa Core](#showa-core) | Mod | 0.2.0 | Shipped | [mods/showa_core/](mods/showa_core/) |
+| [Showa Core](#showa-core) | Mod | 0.3.0 | Shipped | [mods/showa_core/](mods/showa_core/) |
 | [Showa Arcade](#showa-arcade) | Mod | 0.2.0 | Shipped | [mods/showa_arcade/](mods/showa_arcade/) |
 | [Showa Contests](#showa-contests) | Mod | 0.1.0 | Shipped | [mods/showa_contests/](mods/showa_contests/) |
 | [Showa Malls](#showa-malls) | Mod | 0.1.0 | Shipped | [mods/showa_malls/](mods/showa_malls/) |
-| [Showa Rivals](#showa-rivals) | Mod | 0.3.0 | Shipped | [mods/showa_rivals/](mods/showa_rivals/) |
+| [Showa Rivals](#showa-rivals) | Mod | 0.3.1 | Shipped | [mods/showa_rivals/](mods/showa_rivals/) |
 | [Showa Tournaments](#showa-tournaments) | Mod | 0.1.0 | Shipped | [mods/showa_tournaments/](mods/showa_tournaments/) |
-| [Showa Dev Kit](#showa-dev-kit) | Mod (dev tool) | 0.1.1 | Shipped | [mods/showa_devkit/](mods/showa_devkit/) |
+| [Showa Parties](#showa-parties) | Mod | 0.1.0 | Shipped | [mods/showa_parties/](mods/showa_parties/) |
+| [Showa Dev Kit](#showa-dev-kit) | Mod (dev tool) | 0.1.2 | Shipped | [mods/showa_devkit/](mods/showa_devkit/) |
 | [Gen 2 API Probe](#gen-2-api-probe) | Mod (dev tool) | 0.1.0 | Shipped | [mods/gen2_api_probe/](mods/gen2_api_probe/) |
 | ROM files gitignored | Repo hygiene | — | Shipped | [.gitignore](.gitignore) |
 
@@ -37,7 +38,7 @@ gen-2 loader suite, and a driver that runs on a real Gold boot.
 ```
 showa_core  (shared library: wallet, clock, scheduler, news, venues, minigames)
    ^            ^               ^                ^
-showa_arcade  showa_malls   showa_contests   showa_rivals   showa_tournaments
+showa_arcade  showa_malls  showa_contests  showa_rivals  showa_tournaments  showa_parties
                                              (optional deps on the other three)
 ```
 
@@ -149,6 +150,27 @@ handover's Gotchas.
 Suites: 1837 pure checks, 123 headless, 102 menu-width checks, 28-check Gold
 driver.
 
+### Showa Parties
+
+Every third day somebody throws a party, rotating around the venues the rest
+of the suite registers, with three themes that change who turns up. Five
+guests, each with one thing on their mind: a **friendly battle** scaled to
+your party, an **item swap** ("I am after a POTION, I will give you a REVIVE
+for it"), or a **real POKEMON trade**.
+
+The trade goes through the engine's own trade routine rather than a hand-
+rolled party swap, so the mon you receive keeps the level of the one you
+handed over, recomputes its stats for its new species, arrives nicknamed with
+the guest as its original trainer, and is ticked off in the #DEX. That is the
+one thing in the suite that reaches an engine internal, and the mod declares
+`engine_internals` for it.
+
+The guest list is a pure function of the day and the room, so the crowd is
+the crowd the news announced and walking out and back in does not reroll it.
+One deal per guest per party.
+
+Suites: 582 pure checks, 123 headless, 34-check Gold driver.
+
 ### Showa Dev Kit
 
 A test menu for the whole suite, on the START menu as SHOWA DEV: warp to any
@@ -161,9 +183,10 @@ feature mod that is not installed are hidden, so it works on any subset.
 install-dependent branches and the column widths — be tested without a boot.
 The width rule is there because three label collisions ("SEAKING DERBYSHUT",
 "SPARKS Lv6CHIKAGAI", "SEE THE BOARDOKIE") shipped past green suites and were
-caught by screenshot.
+caught by screenshot. A fourth was caught by the width test instead, which is
+the point of having one.
 
-Suites: 123 menu checks, 18-check Gold driver.
+Suites: 145 menu checks, 18-check Gold driver.
 
 ### Gen 2 API Probe
 
@@ -198,13 +221,17 @@ added. The long form, with the debugging each came from, is in
    including a *path* into the cache written in a lua or json file. Read what
    you need out of the player's own tables at runtime instead (that is what
    `core.trainers.setPic` does for battle portraits).
-8. **Screenshot every new menu and every new line of dialogue.** A green
+8. **A spawned NPC needs a walkable cell, not just an empty one.** Checking
+   only for other NPCs stands people on the shelves — go through
+   `core.placement`, which vetoes unwalkable, occupied and already-claimed
+   cells together.
+9. **Screenshot every new menu and every new line of dialogue.** A green
    suite proves state, never pixels: four column collisions and one
    dialogue-prints-as-dots bug all shipped past green drivers. Put menu rows
    in a pure module with a width test, and say everything through
    `core.dialogue.say`.
-9. **Update this file, SHOWA_ROADMAP.md and SHOWA_HANDOVER.md** when a
-   feature lands.
+10. **Update this file, SHOWA_ROADMAP.md and SHOWA_HANDOVER.md** when a
+    feature lands.
 
 ## Running the tests on Windows
 
