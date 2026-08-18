@@ -48,6 +48,10 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
 - Gold caches imported (v10) for identities `pokemon-love2d` (default) and
   `probe_driver` (driver runs). Red re-imported fresh under `showa_import`
   and its audio.lua + programs.bin copied into the repo dev tree.
+- Seven suite mods on `dev` (showa_core 0.2.0, showa_arcade, showa_contests,
+  showa_malls, showa_rivals 0.3.0, showa_tournaments 0.1.0, showa_devkit
+  0.1.1) plus the probe. 15 suites, ~44,900 checks, every driver at zero
+  failures, `modkit validate` + `gen2check` clean on all eight.
 - `mods/gen2_api_probe` DONE: headless suite **10/10**, Gold boot driver
   **16/16**, `modkit validate` + `gen2check` clean. The driver proves the
   full mod-NPC dialogue chain on Gold end to end.
@@ -163,6 +167,43 @@ showa_arcade  showa_malls   showa_contests   showa_rivals
 - In a driver, `game.world` is the raw World object, NOT the mod-facing
   WorldAPI: `game.world:warpTo` fails where `mod.world:warpTo` works.
   Expose a debug warp from the mod and call that.
+- **Starting a real TRAINER battle from a mod, on Gold.** A mod's table
+  scriptKey may carry NATIVE VM rows beside its own verbs:
+  `{ op = "loadtrainer", class = <index>, member = <n> }`,
+  `{ op = "startbattle" }`, `{ op = "reloadmapafterbattle" }`. Four things
+  each cost a cycle:
+  (1) a native row must NOT have a string at `[1]` -- `runList` normalises
+  any row without an `op` whose `[1]` is a string into a MOD COMMAND, so
+  `{ "loadtrainer", 130, 1 }` is silently read as a verb of that name;
+  (2) `loadtrainer` addresses a class by NUMBER
+  (`src/world/gen2/Trainers.lua:classIndex` reads `class.index`), so a
+  registered class without an explicit `index` is unreachable from any
+  script -- Gold's own classes hold 1..66 and `showa_core`'s
+  `trainers.BLOCKS` hands each mod a slice above 100;
+  (3) the party the engine fights is built by `Trainers.party` FROM THE
+  CLASS RECORD, so rows handed back from the `trainer.party` hook skip
+  `Mon.new` and the mons arrive WITH NO MOVES -- write the live roster into
+  `data.trainers.classes[id].trainers[n].party` instead (they are the same
+  table as `data.gen2Trainers`, src/core/Game2.lua:963);
+  (4) `reloadmapafterbattle` ENDS the script on a loss (it is the whiteout
+  jump), so a verb that records the result must sit BEFORE it. The verb
+  after `startbattle` reads `ctx.vm.battleOutcome` ("win"/"lose"/"draw").
+  A fixed row list can fight a different opponent each time: the mod owns
+  the table, and the VM reads `cmd.class` at the moment the row runs.
+- **A mod's trainer class needs a battle portrait** or the intro opens on an
+  empty plinth (`BattleState.trainerArt` finds nothing and
+  `showEnemyTrainer` stays false). Do NOT write a cache path: modkit MK301
+  fails any lua/json in the mod containing "assets/generated/", rightly.
+  `core.trainers.setPic(classId, "SCHOOLBOY")` reads the art out of the
+  player's own `data.gen2MenuGfx.battleHud.trainerPics` instead. It needs
+  the live game, so hang it on `game.ready`.
+- **`ListMenu`'s `onCancel` takes NO arguments and runs AFTER the menu has
+  already popped itself** (`src/ui/ListMenu.lua:168`). `onCancel =
+  function(menu) menu:close() end` is a crash on the B button -- it shipped
+  in showa_devkit and was only found when a driver pressed B.
+- **Gold's font has no "$".** It drops the character and logs
+  `font: no glyph for "$"`. The currency glyph is charmap.asm's yen,
+  `"Â¥"` (what `src/ui/gen2/Chrome.lua` and MartMenu price with).
 - When a driver closes a minigame's results card, do NOT mash extra A
   presses while still facing the cabinet — each one is another paid play.
   Driver checks on `mod.save`-backed values must be relative deltas: the
@@ -293,3 +334,37 @@ game 2, FEATURES.md rows for the suite, and then the Phase 2 backlog
 - Two menu-layout collisions were caught by screenshot after the suites
   were green; the glyph-budget rule is now in Gotchas and pinned by a
   test.
+
+### 2026-08-17 (M6) — showa_tournaments, and the trainer-battle seam
+
+- `mods/showa_tournaments` 0.1.0: three cups on the National Park lawn
+  (ROOKIE Lv15 / OPEN Lv30 + 3 badges / MASTER Lv50 + 6 badges), an
+  eight-slot seeded single-elimination draw, a registrar and a referee at
+  (13,44) and (15,44), a bracket board, per-cup records, prize money and
+  news coverage. `bracket/` and `cups/` are pure, so the draw, the byes,
+  the round rollover and the placement table are all testable from
+  literals; `desk/menu.lua` is pure for the same reason the devkit's is.
+- **The big one: this is the first Showa mod that starts a REAL trainer
+  battle**, and the recipe is now in Gotchas above. The short version is
+  that a mod's row list may carry native `loadtrainer` / `startbattle` /
+  `reloadmapafterbattle` rows, that `loadtrainer` needs a numeric class
+  index, that the roster must go into the CLASS RECORD (not through the
+  `trainer.party` hook, which skips `Mon.new` and hands over mons with no
+  moves), and that the result verb must sit before the reload.
+- That found a latent bug in showa_rivals: its `trainer.party` substitution
+  would have put move-less mons into any battle. Rivals 0.3.0 writes the
+  live roster into the class record instead, carries a class index, and
+  exports `battleCard` / `syncParty` so a cup can stand a team up under a
+  level cap and put it back afterwards.
+- showa_core 0.2.0 owns the shared half: `core.trainers` hands each mod its
+  own slice of the class-index space, writes rosters, and borrows a
+  portrait out of the player's own art table (a cache path written into a
+  mod is an MK301 failure, and rightly).
+- Three bugs the Gold driver caught that no suite could: a crash on the B
+  button (`ListMenu`'s `onCancel` takes no arguments and the menu is
+  already popped -- showa_devkit had the same bug and is fixed too), Gold's
+  font having no "$", and a fourth menu-column collision
+  ("SEE THE BOARDOKIE"). All three are in Gotchas.
+- Suites: 1837 rules + 123 headless + 102 menu, Gold driver 28 checks / 0
+  failures, validate + gen2check clean. showa_devkit 0.1.1 gains a CUPS
+  page so the whole circuit can be driven from the START menu.

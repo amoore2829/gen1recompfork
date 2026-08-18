@@ -29,6 +29,7 @@ return function(mod)
       contests = ex("showa_contests"),
       malls = ex("showa_malls"),
       rivals = ex("showa_rivals"),
+      cups = ex("showa_tournaments"),
     }
   end
 
@@ -54,10 +55,28 @@ return function(mod)
     if p.malls then
       stickers = ("%d/4"):format(p.malls.stickerCount())
     end
+    local cupList, cup
+    if p.cups then
+      cupList = {}
+      for _, entry in ipairs(p.cups.cups()) do
+        cupList[#cupList + 1] = { id = entry.id, short = entry.short,
+                                  cap = entry.cap }
+      end
+      local live = p.cups.current()
+      if live then
+        local def
+        for _, entry in ipairs(p.cups.cups()) do
+          if entry.id == live.cupId then def = entry end
+        end
+        cup = { short = def and def.short or live.cupId,
+                round = live.round, alive = live.alive }
+      end
+    end
     local save = mod.game and mod.game.save
     return {
       have = { arcade = p.arcade ~= nil, contests = p.contests ~= nil,
-               malls = p.malls ~= nil, rivals = p.rivals ~= nil },
+               malls = p.malls ~= nil, rivals = p.rivals ~= nil,
+               cups = p.cups ~= nil },
       venues = venues,
       rivals = roster,
       tokens = core.wallet.get("ARCADE_TOKEN"),
@@ -65,6 +84,8 @@ return function(mod)
       money = (save and save.player and save.player.money) or 0,
       derbyOpen = p.contests and p.contests.isSessionActive() or false,
       stickers = stickers,
+      cups = cupList,
+      cup = cup,
     }, p
   end
 
@@ -170,6 +191,29 @@ return function(mod)
     return "everyone is here"
   end
 
+  -- The cup circuit, without walking to the park and fighting three
+  -- rounds: enter, settle your own match either way, or arm the referee so
+  -- the next A press in front of him really is the battle.
+  local function cups(action, arg)
+    local p = parts()
+    if not p.cups then return "tournaments not installed" end
+    if action == "enter" then
+      local ok, why = p.cups.debug.enter(arg)
+      return ok and ("entered " .. tostring(arg)) or tostring(why)
+    elseif action == "play" then
+      return tostring(p.cups.debug.play(true))
+    elseif action == "lose" then
+      return tostring(p.cups.debug.play(false))
+    elseif action == "arm" then
+      local armed = p.cups.debug.arm()
+      return armed and ("next: " .. tostring(armed.name)) or "no match up"
+    elseif action == "drop" then
+      p.cups.debug.abandon()
+      return "withdrawn"
+    end
+    return nil
+  end
+
   local function gotoRival(rivalId)
     local p = parts()
     if not p.rivals then return "rivals not installed" end
@@ -196,7 +240,8 @@ return function(mod)
   local function titleFor(page)
     local titles = { root = "SHOWA DEV", warp = "WARP TO", games = "CABINETS",
                      wallet = "WALLET", derby = "DERBY", stamps = "STAMPS",
-                     rivals = "RIVALS", status = "DIAGNOSTIC" }
+                     rivals = "RIVALS", cups = "CUPS",
+                     status = "DIAGNOSTIC" }
     return titles[page] or "SHOWA DEV"
   end
 
@@ -212,6 +257,11 @@ return function(mod)
     if verb == "rivals" then
       if arg == "tick" then return tickRivals(10) end
       if arg == "gather" then return gatherRivals() end
+    end
+    if verb == "cup" then
+      local action, which = arg:match("^(%a+):(.+)$")
+      if action then return cups(action, which) end
+      return cups(arg)
     end
     return nil
   end
@@ -248,8 +298,10 @@ return function(mod)
         if row.venue or row.rival then return end
         mod.ui.push(game, SCREEN, { page = page or "root", note = said })
       end,
-      onCancel = function(menu)
-        menu:close()
+      -- onCancel takes NO arguments and runs AFTER ListMenu has already
+      -- popped itself (src/ui/ListMenu.lua:168), so closing again here is an
+      -- index of nil -- a crash on the B button.
+      onCancel = function()
         if page and page ~= "root" then
           mod.ui.push(game, SCREEN, { page = "root" })
         end
@@ -287,4 +339,5 @@ return function(mod)
   mod.exports.warpTo = warpTo
   mod.exports.tickRivals = tickRivals
   mod.exports.stockWallet = stockWallet
+  mod.exports.cups = cups
 end

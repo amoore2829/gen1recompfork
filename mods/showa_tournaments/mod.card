@@ -1,0 +1,43 @@
+return {
+  summary = "The National Park cup circuit: three single-elimination "
+    .. "tournaments with level caps, a bracket you can read on the "
+    .. "board, real trainer battles for your own matches, and the rest "
+    .. "of the round settled while you play yours.",
+  author = "amoore2829",
+  tags = { "tournament", "battle", "gen2", "showa" },
+  differences = {
+    changed = {
+      "rival trainer classes now carry a numeric class index and a "
+        .. "battle portrait, so a script can actually put one in front "
+        .. "of you; their live team is written into the class record "
+        .. "rather than substituted through the trainer.party hook, "
+        .. "which is what gives the mons their moves",
+    },
+    added = {
+      "a registrar and a referee on the NATIONAL PARK lawn",
+      "three cups -- ROOKIE (Lv15), OPEN (Lv30, 3 badges), MASTER "
+        .. "(Lv50, 6 badges) -- with entry fees and prize money",
+      "an eight-slot single-elimination draw mixing you, the rivals "
+        .. "the cup suits, and a house field",
+      "your own matches as real trainer battles; the other matches in "
+        .. "the round are settled by a seeded strength roll",
+      "a bracket board, a per-cup win/entry record, and news coverage",
+    },
+    known = {
+      "the cup caps its OPPONENTS by building their teams at the cap; "
+        .. "it cannot cap yours without rewriting mons in your save, so "
+        .. "an over-levelled party is turned away at the desk instead",
+      "matches you are not in are decided by a formula over party "
+        .. "strength, not by simulating the battle",
+      "losing a match is a whiteout, because that is what losing a "
+        .. "trainer battle is on Gold -- the registrar tells you how "
+        .. "the cup finished when you come back",
+      "one cup runs at a time, and there is no calendar: a cup is open "
+        .. "whenever you are not already in one",
+      "the house field's eight entrants share one trainer class, so "
+        .. "they all fight under the same class name",
+    },
+  },
+  credits = {},
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}

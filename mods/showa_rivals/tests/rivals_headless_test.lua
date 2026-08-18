@@ -35,6 +35,10 @@ local function goldData()
   data.gen2Pokemon = data.pokemon
   data.gen2Sprites = data.sprites
   data.gen2Trainers = { classes = {} }
+  -- src/core/Game2.lua:963 aliases these to one table, and the roster
+  -- writer follows data.trainers; a fixture that only sets one of them
+  -- would let a broken write pass.
+  data.trainers = data.gen2Trainers
   data.gen2Tilesets.TILESET_MART =
     data.gen2Tilesets.TILESET_MART or { id = "TILESET_MART" }
   return data
@@ -75,6 +79,76 @@ do
     T.check(run.data.gen2Trainers.classes[class] ~= nil,
       "trainer class registered: " .. class)
   end
+
+  -- ------- the battle seam
+  --
+  -- A class without a numeric index is unreachable from `loadtrainer`, and a
+  -- roster the engine never sees is a rival who fights with their starter.
+  -- Both were true before tournaments needed a real battle, and neither is
+  -- visible from anywhere else, so they are asserted here.
+
+  local seenIndex = {}
+  for id, class in pairs(run.data.gen2Trainers.classes) do
+    T.check(type(class.index) == "number",
+      id .. " carries a numeric class index")
+    T.check(class.index > 66, id .. " does not shadow one of Gold's own")
+    T.eq(seenIndex[class.index], nil,
+      "no two rival classes share index " .. tostring(class.index))
+    seenIndex[class.index] = id
+    T.check(#class.trainers >= 1, id .. " fields a trainer")
+    -- no pic yet: the portrait is read out of the player's cache table on
+    -- game.ready, and this load has no game
+    T.eq(class.pic, nil, id .. " carries no hardcoded art path")
+  end
+
+  local card = rivals.battleCard("pichu")
+  T.check(card ~= nil, "a rival hands out a battle card")
+  T.eq(card.classId, "SHOWA_PICHU_KID", "naming the class to load")
+  T.eq(card.index, run.data.gen2Trainers.classes.SHOWA_PICHU_KID.index,
+    "and the number to load it by")
+  T.eq(rivals.battleCard("nobody"), nil, "an unknown rival has no card")
+
+  -- The roster writer reads mod.game.data, and a headless load has no game
+  -- (Loader:_game answers nil under Gen 2 when nothing injected one).  It is
+  -- resolved on every touch, so standing a stub up here is enough to drive
+  -- the real write rather than assert around it.
+  run.loader.game = { data = run.data, save = { party = {} } }
+
+  -- the portrait table a real Gold cache carries
+  run.data.gen2MenuGfx = { battleHud = { trainerPics = {
+    SCHOOLBOY = "art/schoolboy.png",
+    LASS = "art/lass.png" } } }
+  rivals.debug.dress()
+  for id, class in pairs(run.data.gen2Trainers.classes) do
+    T.check(type(class.pic) == "string" and class.pic ~= "",
+      id .. " took a portrait from the player's own art table")
+  end
+
+  local function classParty(classId)
+    return run.data.gen2Trainers.classes[classId].trainers[1].party
+  end
+
+  -- grow the rival past their starter so a stale roster would show
+  local live = rivals.battleCard("pichu")
+  for _ = 1, 12 do rivals.debug.tick() end
+  local grown = rivals.battleCard("pichu")
+  T.check(grown.level >= live.level, "ticking does not un-train a rival")
+
+  T.eq(classParty("SHOWA_PICHU_KID")[1].species, grown.party[1].species,
+    "the class roster is the rival's LIVE team, not their starter")
+  T.eq(classParty("SHOWA_PICHU_KID")[1].level, grown.party[1].level,
+    "at the level the news has been reporting")
+  T.eq(#classParty("SHOWA_PICHU_KID"), math.min(6, #grown.party),
+    "and their whole bench comes with them")
+
+  -- and a cup can stand that team up under a cap, then put it back
+  rivals.syncParty("pichu", { cap = 5 })
+  T.eq(classParty("SHOWA_PICHU_KID")[1].level, 5, "a cap caps the roster")
+  rivals.syncParty("pichu")
+  T.eq(classParty("SHOWA_PICHU_KID")[1].level, grown.party[1].level,
+    "and syncing again puts the real team back")
+  T.eq(rivals.syncParty("nobody"), false,
+    "syncing a rival who is not there is a refusal, not a crash")
 
   -- ticking moves the world: the arcade rat posts a score
   rivals.debug.tick()

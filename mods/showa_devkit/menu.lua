@@ -8,11 +8,13 @@
 local Menu = {}
 
 -- ctx = {
---   have  = { arcade = bool, contests = bool, malls = bool, rivals = bool },
+--   have  = { arcade = bool, contests = bool, malls = bool, rivals = bool,
+--             cups = bool },
 --   venues = { { id, label, map }, ... },
 --   tokens = n, mallPoints = n, money = n,
 --   rivals = { { id, name, location, level }, ... },
 --   derbyOpen = bool, stickers = "2/4",
+--   cup = { short = "ROOKIE", round = 1, alive = true } | nil,
 -- }
 
 function Menu.root(ctx)
@@ -33,6 +35,10 @@ function Menu.root(ctx)
   end
   if ctx.have.rivals then
     rows[#rows + 1] = { id = "rivals", label = "RIVALS", right = "" }
+  end
+  if ctx.have.cups then
+    rows[#rows + 1] = { id = "cups", label = "CUPS",
+                        right = ctx.cup and ctx.cup.short or "NONE" }
   end
   rows[#rows + 1] = { id = "status", label = "DIAGNOSTIC", right = "" }
   rows[#rows + 1] = { id = "close", label = "CLOSE", right = "" }
@@ -116,6 +122,28 @@ function Menu.rivals(ctx)
   return rows
 end
 
+-- The cup circuit.  With a cup running the page is about the cup you are
+-- in; without one it is the three ways to start one.
+function Menu.cups(ctx)
+  local rows = {}
+  if ctx.cup then
+    rows[#rows + 1] = { id = "cup:play", label = "WIN A MATCH",
+                        right = "R" .. tostring(ctx.cup.round or 1) }
+    rows[#rows + 1] = { id = "cup:lose", label = "LOSE A MATCH", right = "" }
+    rows[#rows + 1] = { id = "cup:arm", label = "ARM REFEREE", right = "" }
+    rows[#rows + 1] = { id = "cup:drop", label = "WITHDRAW",
+                        right = ctx.cup.alive and "IN" or "OUT" }
+  else
+    for _, cup in ipairs(ctx.cups or {}) do
+      rows[#rows + 1] = { id = "cup:enter:" .. cup.id,
+                          label = "ENTER " .. cup.short,
+                          right = "L" .. tostring(cup.cap) }
+    end
+  end
+  rows[#rows + 1] = { id = "back", label = "BACK", right = "" }
+  return rows
+end
+
 function Menu.status(ctx)
   local rows = {}
   local function row(label, ok)
@@ -127,6 +155,7 @@ function Menu.status(ctx)
   row("CONTESTS", ctx.have.contests)
   row("MALLS", ctx.have.malls)
   row("RIVALS", ctx.have.rivals)
+  row("CUPS", ctx.have.cups)
   rows[#rows + 1] = { id = "info", label = "VENUES",
                       right = tostring(#ctx.venues) }
   rows[#rows + 1] = { id = "info", label = "CAST",
@@ -138,7 +167,7 @@ end
 Menu.PAGES = {
   warp = Menu.warp, games = Menu.games, wallet = Menu.wallet,
   derby = Menu.derby, stamps = Menu.stamps, rivals = Menu.rivals,
-  status = Menu.status,
+  cups = Menu.cups, status = Menu.status,
 }
 
 return Menu

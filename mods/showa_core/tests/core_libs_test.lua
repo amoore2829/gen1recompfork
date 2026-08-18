@@ -13,6 +13,7 @@ local News = require("mods.showa_core.lib.news")
 local Venues = require("mods.showa_core.lib.venues")
 local Minigame = require("mods.showa_core.lib.minigame")
 local Dialogue = require("mods.showa_core.lib.dialogue")
+local Trainers = require("mods.showa_core.lib.trainers")
 
 -- ------- wallet
 
@@ -182,6 +183,100 @@ do
   T.eq(Dialogue.say(nil, "x"), false, "no ctx is a refusal, not a crash")
   T.eq(Dialogue.say({}, "x"), false, "no vm is a refusal too")
   T.eq(Dialogue.say(ctx, nil), false, "and so is no body")
+end
+
+-- ------- trainer class indices
+
+do
+  local alloc = Trainers.newAllocator()
+  local a = Trainers.claim(alloc, "showa_rivals", "SHOWA_PICHU_KID")
+  local b = Trainers.claim(alloc, "showa_rivals", "SHOWA_CLEFFA_KID")
+  T.check(a >= 100, "a claim lands inside the mod's own block (" .. a .. ")")
+  T.check(b ~= a, "and two classes never share a number")
+  T.check(a > Trainers.VANILLA_LAST and b > Trainers.VANILLA_LAST,
+    "never on top of one of Gold's own 66 classes")
+
+  T.eq(Trainers.claim(alloc, "showa_rivals", "SHOWA_PICHU_KID"), a,
+    "claiming the same class twice answers the same number")
+  T.eq(Trainers.indexOf(alloc, "SHOWA_PICHU_KID"), a, "and it reads back")
+  T.eq(Trainers.classAt(alloc, a), "SHOWA_PICHU_KID",
+    "and the number reads back to the class")
+  T.eq(Trainers.indexOf(alloc, "NOBODY"), nil, "an unclaimed class has none")
+
+  local cup = Trainers.claim(alloc, "showa_tournaments", "SHOWA_CUP_ENTRANT")
+  T.check(cup >= 130, "another mod's block starts above ours (" .. cup .. ")")
+
+  local _, err = Trainers.claim(alloc, "not_a_mod", "X")
+  T.check(err ~= nil, "an unknown block is refused with a reason")
+  T.eq(pcall(Trainers.claim, alloc, "showa_rivals", 7), false,
+    "and a non-string class id is refused outright")
+end
+
+do
+  -- the blocks themselves must not overlap, or two mods collide in the field
+  local spans = {}
+  for id, block in pairs(Trainers.BLOCKS) do
+    T.check(block.first > Trainers.VANILLA_LAST,
+      id .. "'s block starts above Gold's own classes")
+    T.check(block.last >= block.first, id .. "'s block is the right way round")
+    T.check(block.last <= 255, id .. "'s block fits in a byte")
+    spans[#spans + 1] = { id = id, first = block.first, last = block.last }
+  end
+  table.sort(spans, function(x, y) return x.first < y.first end)
+  for i = 2, #spans do
+    T.check(spans[i].first > spans[i - 1].last,
+      ("%s does not overlap %s"):format(spans[i].id, spans[i - 1].id))
+  end
+end
+
+do
+  -- a whole block can be filled, and then says so rather than overrunning
+  local alloc = Trainers.newAllocator()
+  local block = Trainers.BLOCKS.showa_rivals
+  local room = block.last - block.first + 1
+  for i = 1, room do
+    T.check(Trainers.claim(alloc, "showa_rivals", "C" .. i) ~= nil,
+      "claim " .. i .. " fits")
+  end
+  local overflow, err = Trainers.claim(alloc, "showa_rivals", "ONE_TOO_MANY")
+  T.eq(overflow, nil, "the claim past the end fails")
+  T.check(err:find("full"), "and says the block is full")
+end
+
+-- ------- roster rows
+
+do
+  local rows = Trainers.rows({ { species = "PIKACHU", level = 40 },
+                               { species = "MAREEP", level = 38 } }, { cap = 15 })
+  T.eq(#rows, 2, "every mon makes the roster")
+  T.eq(rows[1].level, 15, "a cap really caps the lead")
+  T.eq(rows[2].level, 15, "and the bench")
+  T.eq(rows[1].species, "PIKACHU", "species survive")
+
+  local uncapped = Trainers.rows({ { species = "PIKACHU", level = 40 } })
+  T.eq(uncapped[1].level, 40, "with no cap the level is untouched")
+
+  local six = {}
+  for i = 1, 9 do six[i] = { species = "RATTATA", level = 5 } end
+  T.eq(#Trainers.rows(six), 6, "a party is never longer than six")
+  T.eq(#Trainers.rows(six, { max = 2 }), 2, "and a caller may ask for fewer")
+
+  -- a trainer with no party is a battle that cannot start
+  T.eq(#Trainers.rows({}), 1, "an empty party still fields somebody")
+  T.eq(#Trainers.rows(nil), 1, "and so does no party at all")
+  T.eq(Trainers.rows({}, { cap = 20, fallbackSpecies = "PIDGEY" })[1].species,
+    "PIDGEY", "the stand-in is nameable")
+
+  -- junk in the party list is dropped, not fatal
+  local mixed = Trainers.rows({ { species = "PIKACHU", level = 10 },
+                                { level = 10 }, { species = "", level = 3 } })
+  T.eq(#mixed, 1, "rows with no species are skipped")
+  T.eq(mixed[1].species, "PIKACHU", "and the sound ones survive")
+
+  T.eq(Trainers.rows({ { species = "PIKACHU", level = 0 } })[1].level, 1,
+    "a level below one is lifted to one")
+  T.eq(Trainers.rows({ { species = "PIKACHU" } })[1].level, 5,
+    "and a mon with no level at all still fields")
 end
 
 T.finish("showa_core libs")
