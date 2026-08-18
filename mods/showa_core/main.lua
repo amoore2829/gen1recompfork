@@ -12,6 +12,7 @@ local Venues = require("mods.showa_core.lib.venues")
 local Minigame = require("mods.showa_core.lib.minigame")
 local Dialogue = require("mods.showa_core.lib.dialogue")
 local Trainers = require("mods.showa_core.lib.trainers")
+local Placement = require("mods.showa_core.lib.placement")
 
 return function(mod)
   -- ------- persistent state, one versioned blob
@@ -74,7 +75,7 @@ return function(mod)
 
   -- ------- the published API
 
-  mod.exports.version = "0.2.0"
+  mod.exports.version = "0.3.0"
 
   mod.exports.wallet = {
     define = function(id, label)
@@ -130,6 +131,27 @@ return function(mod)
 
   mod.exports.minigame = {
     screen = Minigame.screen,
+  }
+
+  -- Somewhere to stand.  A cell being free of NPCs is NOT enough: a spawn
+  -- that skips the walkability check puts people on top of the furniture,
+  -- which is what it looks like on screen.  lib/placement.lua has the rest.
+  mod.exports.placement = {
+    offsets = Placement.offsets,
+    pick = Placement.pick,
+    freeFn = Placement.freeFn,
+    claim = Placement.claim,
+    -- The predicate built from a live world, which is the form every
+    -- feature mod actually wants.  `world` is mod.world.
+    forWorld = function(world, taken)
+      local overworld = world and world:overworld()
+      local map = overworld and overworld.map
+      local walkable = map and map.isWalkableCell
+        and function(x, y) return map:isWalkableCell(x, y) end or nil
+      local occupied = overworld and overworld.npcAt
+        and function(x, y) return overworld:npcAt(x, y) ~= nil end or nil
+      return Placement.freeFn(walkable, occupied, taken)
+    end,
   }
 
   -- A class a script can `loadtrainer` and a roster the engine will really

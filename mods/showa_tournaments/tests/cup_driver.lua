@@ -175,12 +175,23 @@ return function(game)
     U.wait(30)
     shot("55-cup-battle.png")
 
-    -- fight it out; a L15 QUILAVA against a capped rookie field should win
-    for _ = 1, 300 do
+    -- Fight it out.  A is right on the battle menu, the move list and for
+    -- paging text; "submenu" is a screen pushed OVER the battle and which
+    -- button leaves it depends on why it opened, so fall back to B when the
+    -- phase has not moved for a while.  Both drivers hung here without it.
+    local lastPhase, stalled = nil, 0
+    for _ = 1, 900 do
       if battle.battle.over then break end
-      if battle.phase == "menu" then
+      local phase = battle.phase
+      stalled = (phase == lastPhase) and (stalled + 1) or 0
+      lastPhase = phase
+      if phase == "menu" then
         U.tap(game, "a"); U.wait(4)   -- FIGHT
+      elseif phase == "moves" then
         U.tap(game, "a"); U.wait(6)   -- first move
+      elseif stalled > 8 then
+        U.tap(game, "b"); U.wait(6)
+        stalled = 0
       else
         U.tap(game, "a"); U.wait(4)
       end

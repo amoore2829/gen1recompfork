@@ -1,0 +1,42 @@
+return {
+  summary = "A neighbourhood party every third day, rotating around the "
+    .. "suite's venues: five guests turn up wanting a friendly battle, an "
+    .. "item swap, or a real POKEMON trade, and the news announces the "
+    .. "next one.",
+  author = "amoore2829",
+  tags = { "social", "trade", "battle", "gen2", "showa" },
+  differences = {
+    changed = {},
+    added = {
+      "a party every third day, rotating venue and theme (TRADE MEET / "
+        .. "BATTLE PARTY / SWAP MEET)",
+      "five guests per party, drawn from the day and the room so the "
+        .. "crowd is the crowd the news announced",
+      "friendly trainer battles against guests, scaled to your party",
+      "item swaps: a guest names what they are after and what they will "
+        .. "give for it",
+      "real POKEMON trades through the engine's own trade routine, so a "
+        .. "traded mon keeps the given mon's level, recomputes its stats, "
+        .. "arrives nicknamed with the guest as its original trainer, and "
+        .. "is ticked off in the #DEX",
+      "a host with the guest list, the theme, and when the next party is",
+    },
+    known = {
+      "parties are thrown at venues the OTHER Showa mods register, so with "
+        .. "none of them installed there is nowhere to hold one and no "
+        .. "party happens",
+      "one deal per guest per party: swap or trade with somebody and they "
+        .. "are done for the evening",
+      "the trade is one mon for one mon and the guest is not fussy about "
+        .. "gender, level or condition -- unlike the cart's own six trades",
+      "losing a friendly battle is still a whiteout, because that is what "
+        .. "losing a trainer battle is on Gold",
+      "guests all share one trainer class, so they fight under one class "
+        .. "name",
+      "a party lasts the whole day rather than an evening: there is no "
+        .. "time-of-day window yet",
+    },
+  },
+  credits = {},
+  compat = { engine = ">=0.0.0-0 <2.0.0", modApi = 2 },
+}

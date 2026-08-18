@@ -14,6 +14,7 @@ local Venues = require("mods.showa_core.lib.venues")
 local Minigame = require("mods.showa_core.lib.minigame")
 local Dialogue = require("mods.showa_core.lib.dialogue")
 local Trainers = require("mods.showa_core.lib.trainers")
+local Placement = require("mods.showa_core.lib.placement")
 
 -- ------- wallet
 
@@ -277,6 +278,107 @@ do
     "a level below one is lifted to one")
   T.eq(Trainers.rows({ { species = "PIKACHU" } })[1].level, 5,
     "and a mon with no level at all still fields")
+end
+
+-- ------- placement
+--
+-- A cell being free of NPCs is not enough.  Guests stood on the mall's
+-- shelves for a whole driver run because this search only asked npcAt, and
+-- the screenshot is what caught it -- so the walkability veto is pinned here.
+
+do
+  -- a little room: # is wall, . is floor
+  local grid = {
+    "#####",
+    "#...#",
+    "#.#.#",
+    "#...#",
+    "#####",
+  }
+  local function walkable(x, y)
+    local row = grid[y + 1]
+    if not row then return false end
+    return row:sub(x + 1, x + 1) == "."
+  end
+
+  local free = Placement.freeFn(walkable, nil, nil)
+  T.eq(free(1, 1), true, "an open cell is free")
+  T.eq(free(0, 0), false, "a wall is not")
+  T.eq(free(2, 2), false, "and neither is the pillar in the middle")
+  T.eq(free(99, 99), false, "nor anywhere off the map")
+
+  -- the pillar is refused and the search steps around it
+  local x, y = Placement.pick(free, 2, 2)
+  T.check(x ~= nil, "the search finds somewhere near the pillar")
+  T.eq(walkable(x, y), true, "and it is somewhere you could stand")
+  T.check(not (x == 2 and y == 2), "not the pillar itself")
+end
+
+do
+  local function walkable() return true end
+  -- an occupied cell is skipped
+  local occupied = function(x, y) return x == 5 and y == 5 end
+  local free = Placement.freeFn(walkable, occupied, nil)
+  T.eq(free(5, 5), false, "somebody standing there vetoes the cell")
+  local x, y = Placement.pick(free, 5, 5)
+  T.check(not (x == 5 and y == 5), "so the search moves along")
+  T.check(math.abs(x - 5) <= 1 and math.abs(y - 5) <= 1,
+    "to the very next ring")
+end
+
+do
+  -- a whole pass places everybody somewhere different
+  local function walkable() return true end
+  local taken = {}
+  local free = Placement.freeFn(walkable, nil, taken)
+  local seen = {}
+  for i = 1, 12 do
+    local x, y = Placement.pick(free, 10, 10)
+    T.check(x ~= nil, "placement " .. i .. " found a cell")
+    local key = x .. "," .. y
+    T.eq(seen[key], nil, "and nobody doubles up at " .. key)
+    seen[key] = true
+    Placement.claim(taken, x, y)
+  end
+end
+
+do
+  -- prefer wins when it can, and is ignored when it cannot
+  local function walkable(x, y) return not (x == 0 and y == 1) end
+  local free = Placement.freeFn(walkable, nil, nil)
+  local x, y = Placement.pick(free, 0, 0, { prefer = { { 0, 2 } } })
+  T.eq(x, 0, "a preferred cell is taken when it is free")
+  T.eq(y, 2, "even though a nearer one exists")
+
+  x, y = Placement.pick(free, 0, 0, { prefer = { { 0, 1 } } })
+  T.check(not (x == 0 and y == 1),
+    "and an unwalkable preference is passed over")
+end
+
+do
+  -- nowhere to stand answers nil rather than a bad cell
+  local free = Placement.freeFn(function() return false end, nil, nil)
+  T.eq(Placement.pick(free, 3, 3), nil, "a sealed room places nobody")
+  T.eq(Placement.pick(nil, 3, 3), nil, "and no predicate places nobody")
+end
+
+do
+  -- the ring order is stable and starts at the wanted cell
+  local offsets = Placement.offsets(2)
+  T.eq(offsets[1][1], 0, "the first offset is the cell itself (x)")
+  T.eq(offsets[1][2], 0, "the first offset is the cell itself (y)")
+  local again = Placement.offsets(2)
+  for i, offset in ipairs(offsets) do
+    T.eq(again[i][1], offset[1], "offset " .. i .. " is stable (x)")
+    T.eq(again[i][2], offset[2], "offset " .. i .. " is stable (y)")
+  end
+  -- and rings really do widen
+  local far = 0
+  for _, offset in ipairs(offsets) do
+    far = math.max(far, math.max(math.abs(offset[1]), math.abs(offset[2])))
+  end
+  T.eq(far, 2, "a radius-2 search reaches two cells out")
+  T.eq(#offsets, 25, "and covers the whole 5x5 block")
 end
 
 T.finish("showa_core libs")

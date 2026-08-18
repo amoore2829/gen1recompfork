@@ -61,3 +61,9 @@ Rivals can now be **fought**.
 - New exports for other mods: `battleCard(id)` (the class, index, level and
   team to fight) and `syncParty(id, opts)` (stand the team up under a level
   cap, and put it back).
+
+## 0.3.1 — 2026-08-17
+
+- Rivals no longer stand on the furniture. The spawn search only checked
+  whether a cell held another NPC, never whether it was walkable; it now goes
+  through `core.placement`, which vetoes both.

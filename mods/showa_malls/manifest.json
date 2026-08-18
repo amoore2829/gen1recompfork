@@ -9,7 +9,7 @@
   "games": ["gen2"],
   "game_version": ">=0.0.0-0 <2.0.0",
   "priority": 100,
-  "dependencies": ["showa_core@^0.2.0"],
+  "dependencies": ["showa_core@^0.3.0"],
   "optional_dependencies": [],
   "conflicts": [],
   "permissions": [],

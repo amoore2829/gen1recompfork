@@ -1,0 +1,17 @@
+{
+  "id": "showa_parties",
+  "name": "Showa Parties",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "QUEST",
+  "games": ["gen2"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 130,
+  "dependencies": ["showa_core@^0.3.0"],
+  "optional_dependencies": ["showa_arcade", "showa_malls", "showa_contests", "showa_rivals", "showa_tournaments"],
+  "conflicts": [],
+  "permissions": ["engine_internals"],
+  "description": "A neighbourhood party every third day, rotating around the suite's venues: five guests turn up wanting a friendly battle, an item swap, or a real Pokemon trade, and the news announces the next one."
+}
