@@ -18,3 +18,12 @@ All notable changes to this mod are documented here. The format follows
   that only appear when a feature mod is installed, and the column
   widths — is tested without a boot.
 - Suites: 96 menu checks and an 18-check Gold driver.
+
+## 0.1.1 — 2026-08-17
+
+- New **CUPS** page: enter any tournament cup, settle your own match either
+  way, arm the referee, or withdraw. Hidden when `showa_tournaments` is not
+  installed, like every other feature page.
+- Fixed a crash on the B button: `ListMenu`'s `onCancel` takes no arguments
+  and runs after the menu has already popped itself, so the kit's second
+  `menu:close()` indexed nil.

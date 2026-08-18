@@ -1,7 +1,7 @@
 return {
   summary = "A test menu for the Showa suite: warp to any venue, open "
     .. "any cabinet, stock the wallet, run the rival simulation, settle "
-    .. "a derby, and read what is installed.",
+    .. "a derby, drive a tournament cup, and read what is installed.",
   author = "amoore2829",
   tags = { "dev", "tool", "gen2", "showa" },
   differences = {

@@ -51,6 +51,18 @@ local ROSTER = {
 -- the pace of a day out, not a frame.
 local STEPS_PER_TICK = 256
 
+-- The battle intro draws the CLASS's frontpic, and a class the extractor
+-- never saw has no entry in menu_gfx.battleHud.trainerPics -- so without one
+-- a rival battle opens on an empty plinth.  The stand-in is named as a
+-- VANILLA CLASS rather than as a path: showa_core reads the art out of this
+-- player's own cache table (see core.trainers.setPic), because a mod that
+-- spells a cache path is shipping a reference to ROM-derived art.
+local ART_FOR_SPRITE = {
+  SPRITE_LASS = "LASS",
+  SPRITE_GENTLEMAN = "SCHOOLBOY",
+}
+local DEFAULT_ART = "SCHOOLBOY"
+
 return function(mod)
   local core = assert(mod.find("showa_core"),
     "showa_rivals needs showa_core").exports
@@ -112,6 +124,11 @@ return function(mod)
 
   -- ------- the world the sim sees (no engine reaches into sim/)
 
+  -- assigned with the trainer classes below; a tick has to refresh the
+  -- rosters a battle will be built from, and the classes need the sim's
+  -- state to exist first
+  local syncParty, syncAllParties
+
   local function playerLevel()
     local party = mod.game and mod.game.save and mod.game.save.party
     local best = 5
@@ -162,6 +179,7 @@ return function(mod)
       end
     end
     persist()
+    syncAllParties()
   end
 
   -- Ticking on map.ENTERED would move everyone at the exact moment the
@@ -181,9 +199,17 @@ return function(mod)
 
   -- ------- trainer classes, one per rival
 
+  -- `index` is not decoration: `loadtrainer` addresses a class by number and
+  -- a class without one is unreachable from any script.  showa_core owns the
+  -- number line so two Showa mods cannot claim the same slot.
+  local classIndex = {}
   for _, def in ipairs(ROSTER) do
+    local index = assert(core.trainers.claim("showa_rivals", def.trainerClass))
+    classIndex[def.id] = index
     mod.content.trainers:register(def.trainerClass, {
       name = def.name,
+      index = index,
+      baseMoney = def.baseMoney or 12,
       trainers = {
         { name = def.name, party = {
           { level = def.starter[1].level, species = def.starter[1].species },
@@ -192,24 +218,37 @@ return function(mod)
     })
   end
 
-  -- The live party is substituted at battle time rather than baked into
-  -- the class: the class record is a placeholder the engine needs, and
-  -- this hook is what makes the rival you fight the rival you have been
-  -- reading about in the news.
   local classToRival = {}
   for _, def in ipairs(ROSTER) do classToRival[def.trainerClass] = def.id end
 
-  mod.hooks:wrap("trainer.party", function(nextFn, classId, memberId, party)
-    local out = nextFn(classId, memberId, party)
-    local rivalId = classToRival[classId]
-    local live = rivalId and state.rivals[rivalId]
-    if not live or #live.party == 0 then return out end
-    local built = {}
-    for _, mon in ipairs(live.party) do
-      built[#built + 1] = { species = mon.species, level = mon.level }
+  -- The live party is written INTO the class record rather than substituted
+  -- through the `trainer.party` hook.  Both make the rival you fight the
+  -- rival the news has been reporting; only this one goes through the
+  -- engine's own party builder, so the mons arrive with the moves they know
+  -- at that level.  Rows handed straight back from the hook skip Mon.new and
+  -- turn up with an empty move list.
+  syncParty = function(rivalId, opts)
+    local def, live = defs[rivalId], state.rivals[rivalId]
+    if not (def and live) then return false end
+    return core.trainers.setParty(def.trainerClass, 1,
+      core.trainers.rows(live.party, opts))
+  end
+
+  syncAllParties = function()
+    for id in pairs(state.rivals) do syncParty(id) end
+  end
+  syncAllParties()
+
+  -- The portraits need the live game to read the player's own art table, so
+  -- they are hung on game.ready rather than on the registration above.
+  local function dressClasses()
+    for _, def in ipairs(ROSTER) do
+      core.trainers.setPic(def.trainerClass,
+        def.art or ART_FOR_SPRITE[def.sprite] or DEFAULT_ART)
     end
-    return built
-  end)
+  end
+  mod.events:on("game.ready", dressClasses)
+  dressClasses()
 
   -- ------- appearances
 
@@ -351,6 +390,24 @@ return function(mod)
     end
     return out
   end
+  -- What a mod needs to put a rival in a battle: the class to `loadtrainer`,
+  -- the number to name it by, and a way to stand the roster up under a level
+  -- cap (and put it back afterwards -- the class record is shared with every
+  -- other battle in the game).
+  mod.exports.battleCard = function(rivalId)
+    local def, live = defs[rivalId], state.rivals[rivalId]
+    if not (def and live) then return nil end
+    local lead = live.party[1]
+    return {
+      id = def.id, name = def.name,
+      classId = def.trainerClass, index = classIndex[def.id],
+      level = lead and lead.level or 5,
+      party = live.party,
+      lines = def.lines,
+    }
+  end
+  mod.exports.syncParty = function(rivalId, opts) return syncParty(rivalId, opts) end
+
   mod.exports.at = function(venueId)
     local out = {}
     for id, live in pairs(state.rivals) do
@@ -373,6 +430,9 @@ return function(mod)
   mod.exports.debug = {
     tick = tickAll,
     refresh = refreshAppearances,
+    -- hangs on game.ready in play; callable so a suite with a stub game can
+    -- drive the real thing rather than assert around it
+    dress = dressClasses,
     -- drivers must warp through the mod-facing WorldAPI, not the raw
     -- World object hanging off `game` -- they are different types
     warp = function(mapId, x, y, facing)

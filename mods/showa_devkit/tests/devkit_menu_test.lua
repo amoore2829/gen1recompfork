@@ -20,6 +20,9 @@ local function ctx(have, extra)
     rivals = {},
     tokens = 0, mallPoints = 0, money = 0,
     derbyOpen = false, stickers = "0/4",
+    cups = { { id = "rookie", short = "ROOKIE", cap = 15 },
+             { id = "open", short = "OPEN", cap = 30 },
+             { id = "master", short = "MASTER", cap = 50 } },
   }
   for key, value in pairs(extra or {}) do base[key] = value end
   return base
@@ -48,11 +51,12 @@ do
   T.check(not has(bare, "derby"), "no derby without contests")
   T.check(not has(bare, "stamps"), "no rally without malls")
   T.check(not has(bare, "rivals"), "no roster without rivals")
+  T.check(not has(bare, "cups"), "no cup circuit without tournaments")
 
   local full = Menu.root(ctx({ arcade = true, contests = true,
-                               malls = true, rivals = true }))
+                               malls = true, rivals = true, cups = true }))
   for _, id in ipairs({ "warp", "games", "wallet", "derby", "stamps",
-                        "rivals", "status", "close" }) do
+                        "rivals", "cups", "status", "close" }) do
     T.check(has(full, id), "the full suite offers " .. id)
   end
 
@@ -78,6 +82,41 @@ do
   T.eq(rightOf(open, "derby"), "OPEN", "and an open one says so")
 end
 
+-- ------- the cup page is about the cup you are in, or the ones you are not
+
+do
+  local idle = Menu.cups(ctx({ cups = true }))
+  T.eq(#idle, 4, "three cups to enter and a BACK")
+  T.check(has(idle, "cup:enter:rookie"), "the rookie cup can be entered")
+  T.check(has(idle, "cup:enter:master"), "so can the master cup")
+  T.eq(idle[1].right, "L15", "with its level cap shown")
+
+  local running = Menu.cups(ctx({ cups = true },
+    { cup = { short = "ROOKIE", round = 2, alive = true } }))
+  T.check(has(running, "cup:play"), "a running cup can be won")
+  T.check(has(running, "cup:lose"), "or lost")
+  T.check(has(running, "cup:arm"), "and the referee armed")
+  T.check(has(running, "cup:drop"), "or withdrawn from")
+  T.check(not has(running, "cup:enter:rookie"),
+    "and there is no entering a second one")
+  T.eq(running[1].right, "R2", "the round is shown")
+  T.eq(running[4].right, "IN", "and whether you are still in it")
+
+  local out = Menu.cups(ctx({ cups = true },
+    { cup = { short = "MASTER", round = 3, alive = false } }))
+  T.eq(out[4].right, "OUT", "a knocked-out player is told so")
+
+  -- and the root row reports the same state
+  local function rightOf(rows, id)
+    for _, row in ipairs(rows) do if row.id == id then return row.right end end
+  end
+  T.eq(rightOf(Menu.root(ctx({ cups = true })), "cups"), "NONE",
+    "with no cup running the root says NONE")
+  T.eq(rightOf(Menu.root(ctx({ cups = true },
+    { cup = { short = "OPEN", round = 1, alive = true } })), "cups"), "OPEN",
+    "and names the cup when there is one")
+end
+
 -- ------- warping lists every venue, sorted, with a way back
 
 do
@@ -95,7 +134,7 @@ end
 do
   for name, build in pairs(Menu.PAGES) do
     local rows = build(ctx({ arcade = true, contests = true, malls = true,
-                             rivals = true }))
+                             rivals = true, cups = true }))
     T.check(#rows >= 1, name .. " has rows")
     T.eq(rows[#rows].id, "back", name .. " ends with BACK")
   end
@@ -133,6 +172,7 @@ do
   T.eq(seen["ARCADE"], "OK", "the arcade is installed here")
   T.eq(seen["CONTESTS"], "--", "contests are not")
   T.eq(seen["RIVALS"], "--", "nor rivals")
+  T.eq(seen["CUPS"], "--", "nor tournaments")
   T.eq(seen["VENUES"], "3", "and the venue count is real")
 end
 
@@ -147,7 +187,8 @@ end
 do
   local WIDTH = Menu.WIDTH
   local full = ctx({ arcade = true, contests = true, malls = true,
-                     rivals = true }, { rivals = {
+                     rivals = true, cups = true }, {
+    cup = { short = "MASTER", round = 99, alive = true }, rivals = {
     { id = "magby", name = "TAKESHI", location = "CHIKAGAI",
       locationLabel = "CHIKAGAI PASSAGE", level = 100 },
     { id = "tyrogue_chan", name = "RYU", location = "ECRUTEAK",

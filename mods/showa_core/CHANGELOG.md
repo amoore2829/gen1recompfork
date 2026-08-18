@@ -20,3 +20,12 @@ All notable changes to this mod are documented here. The format follows
 - Full export surface: `wallet`, `clock`, `scheduler`, `news`, `venues`,
   `minigame`.
 - Pure-lib suite (40 checks) + headless gen-2 loader suite (13 checks).
+
+## 0.2.0 — 2026-08-17
+
+- New `core.trainers`: the half of a Gen 2 trainer battle that is not the
+  registry. It hands each Showa mod its own slice of the numeric class-index
+  space (Gold's own classes end at 66), writes a live roster into a class
+  record so the engine's party builder gives the mons their moves, and takes
+  a battle portrait from the player's own cache table for a named vanilla
+  class rather than from a path a mod would have to spell.

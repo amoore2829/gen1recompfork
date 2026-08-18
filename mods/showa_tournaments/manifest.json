@@ -1,0 +1,17 @@
+{
+  "id": "showa_tournaments",
+  "name": "Showa Tournaments",
+  "version": "0.1.0",
+  "api": 2,
+  "entry": "main.lua",
+  "profile": "content",
+  "category": "QUEST",
+  "games": ["gen2"],
+  "game_version": ">=0.0.0-0 <2.0.0",
+  "priority": 120,
+  "dependencies": ["showa_core@^0.2.0"],
+  "optional_dependencies": ["showa_rivals"],
+  "conflicts": [],
+  "permissions": [],
+  "description": "The National Park cup circuit: three single-elimination tournaments with level caps, a drawn bracket you can read, real trainer battles for your own matches, and the rest of the round settled while you play."
+}

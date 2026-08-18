@@ -43,3 +43,21 @@ All notable changes to this mod are documented here. The format follows
 - Suites: 29,778 pure sim checks, 27 headless gen-2 checks (including a
   load with none of the optional dependencies present), and a 21-check
   Gold driver.
+
+## 0.3.0 — 2026-08-17
+
+Rivals can now be **fought**.
+
+- Each rival's trainer class carries a numeric `index`, without which
+  `loadtrainer` cannot reach it and no script can put the rival in front of
+  you.
+- Their live team is written into the class record rather than substituted
+  through the `trainer.party` hook, so the engine's own party builder gives
+  the mons the moves they know at that level. Rows handed back from the hook
+  skipped `Mon.new` and arrived with an empty move list.
+- Battle portraits are taken from the player's own cache table for a vanilla
+  class (`core.trainers.setPic`), so a rival battle no longer opens on an
+  empty plinth — and the mod ships no reference to ROM-derived art.
+- New exports for other mods: `battleCard(id)` (the class, index, level and
+  team to fight) and `syncParty(id, opts)` (stand the team up under a level
+  cap, and put it back).

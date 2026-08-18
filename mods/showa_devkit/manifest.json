@@ -1,7 +1,7 @@
 {
   "id": "showa_devkit",
   "name": "Showa Dev Kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
@@ -9,9 +9,9 @@
   "games": ["gen2"],
   "game_version": ">=0.0.0-0 <2.0.0",
   "priority": 200,
-  "dependencies": ["showa_core@^0.1.0"],
-  "optional_dependencies": ["showa_arcade", "showa_contests", "showa_malls", "showa_rivals"],
+  "dependencies": ["showa_core@^0.2.0"],
+  "optional_dependencies": ["showa_arcade", "showa_contests", "showa_malls", "showa_rivals", "showa_tournaments"],
   "conflicts": [],
   "permissions": [],
-  "description": "A test menu for the Showa suite: warp to any venue, open any cabinet, stock the wallet, run the rival simulation, open or settle a derby, and read a live diagnostic of what is installed and working."
+  "description": "A test menu for the Showa suite: warp to any venue, open any cabinet, stock the wallet, run the rival simulation, open or settle a derby, drive a tournament cup, and read a live diagnostic of what is installed and working."
 }

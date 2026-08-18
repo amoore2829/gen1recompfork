@@ -12,12 +12,13 @@ the gotchas each cost a debugging cycle once).
 
 | Feature | Kind | Version | Status | Lives in |
 |---|---|---|---|---|
-| [Showa Core](#showa-core) | Mod | 0.1.0 | Shipped | [mods/showa_core/](mods/showa_core/) |
+| [Showa Core](#showa-core) | Mod | 0.2.0 | Shipped | [mods/showa_core/](mods/showa_core/) |
 | [Showa Arcade](#showa-arcade) | Mod | 0.2.0 | Shipped | [mods/showa_arcade/](mods/showa_arcade/) |
 | [Showa Contests](#showa-contests) | Mod | 0.1.0 | Shipped | [mods/showa_contests/](mods/showa_contests/) |
 | [Showa Malls](#showa-malls) | Mod | 0.1.0 | Shipped | [mods/showa_malls/](mods/showa_malls/) |
-| [Showa Rivals](#showa-rivals) | Mod | 0.2.0 | Shipped | [mods/showa_rivals/](mods/showa_rivals/) |
-| [Showa Dev Kit](#showa-dev-kit) | Mod (dev tool) | 0.1.0 | Shipped | [mods/showa_devkit/](mods/showa_devkit/) |
+| [Showa Rivals](#showa-rivals) | Mod | 0.3.0 | Shipped | [mods/showa_rivals/](mods/showa_rivals/) |
+| [Showa Tournaments](#showa-tournaments) | Mod | 0.1.0 | Shipped | [mods/showa_tournaments/](mods/showa_tournaments/) |
+| [Showa Dev Kit](#showa-dev-kit) | Mod (dev tool) | 0.1.1 | Shipped | [mods/showa_devkit/](mods/showa_devkit/) |
 | [Gen 2 API Probe](#gen-2-api-probe) | Mod (dev tool) | 0.1.0 | Shipped | [mods/gen2_api_probe/](mods/gen2_api_probe/) |
 | ROM files gitignored | Repo hygiene | — | Shipped | [.gitignore](.gitignore) |
 
@@ -36,7 +37,7 @@ gen-2 loader suite, and a driver that runs on a real Gold boot.
 ```
 showa_core  (shared library: wallet, clock, scheduler, news, venues, minigames)
    ^            ^               ^                ^
-showa_arcade  showa_malls   showa_contests   showa_rivals
+showa_arcade  showa_malls   showa_contests   showa_rivals   showa_tournaments
                                              (optional deps on the other three)
 ```
 
@@ -95,8 +96,8 @@ Suites: 69 pure rules checks, 10 headless, 16-check Gold driver.
 
 Rivals with lives of their own: they travel the venue graph, train toward the
 player's level, shop, and catch from their own species pools, and the team you
-fight is the team they have actually been building (substituted live through
-the `trainer.party` hook). All twenty ship, each a single data file: the
+fight is the team they have actually been building (written into their trainer
+class record, so the engine's own party builder gives the mons their moves). All twenty ship, each a single data file: the
 occult nerd, the idol, the fashionista, the tinkerer, the festival cook, the
 shy kid, the gardener, the shrine apprentice, the prankster, the street
 performer, the Center helper, the mall foodie, the shonen protagonist, the
@@ -111,8 +112,42 @@ Clean-room work: MrKrisSatan's AIRivals is the inspiration for the idea and
 nothing else — it ships without a license and only as zips, so none of it was
 read, unpacked or copied.
 
-Suites: 38,509 pure sim checks, 82 headless (including a load with none of the
+Since 0.3.0 every rival is genuinely **fightable**: their class carries the
+numeric index `loadtrainer` addresses it by, a portrait borrowed from the
+player's own art table, and a live roster the engine reads at battle time.
+`battleCard` and `syncParty` are the seam a tournament uses to stand a team up
+under a level cap and put it back.
+
+Suites: 38,509 pure sim checks, 213 headless (including a load with none of the
 optional dependencies present), 21-check Gold driver.
+
+### Showa Tournaments
+
+The cup circuit on the National Park lawn: a folding table, a hand-lettered
+bracket board, and three tournaments — ROOKIE (Lv15), OPEN (Lv30, three
+badges) and MASTER (Lv50, six badges) — with entry fees and prize money. Talk
+to the registrar to enter and read the board; talk to the referee to play your
+match.
+
+Eight entrants, single elimination: you, whichever rivals the cup suits (sorted
+by how close their lead is to the cap, so the three cups field three different
+casts), and a house field to fill. **Your own matches are real trainer
+battles**; the other three in the round are settled by a seeded strength roll
+while you play yours.
+
+The cap applies to your opponents by construction — their teams are built at
+the cap for the match and put back after. It cannot apply to you the same way
+without rewriting mons in your save, so an over-levelled party is turned away
+at the desk instead.
+
+This is the mod that worked out how to start a real trainer battle from a mod
+on Gold: native `loadtrainer` / `startbattle` rows in the referee's row list, a
+numeric class index, and a roster written into the class record. The recipe,
+and the four ways to get it wrong, are at the top of its `main.lua` and in the
+handover's Gotchas.
+
+Suites: 1837 pure checks, 123 headless, 102 menu-width checks, 28-check Gold
+driver.
 
 ### Showa Dev Kit
 
@@ -124,10 +159,11 @@ feature mod that is not installed are hidden, so it works on any subset.
 
 `menu.lua` is pure data, which is what lets the tree — including the
 install-dependent branches and the column widths — be tested without a boot.
-The width rule is there because two label collisions ("SEAKING DERBYSHUT",
-"SPARKS Lv6CHIKAGAI") shipped past green suites and were caught by screenshot.
+The width rule is there because three label collisions ("SEAKING DERBYSHUT",
+"SPARKS Lv6CHIKAGAI", "SEE THE BOARDOKIE") shipped past green suites and were
+caught by screenshot.
 
-Suites: 96 menu checks, 18-check Gold driver.
+Suites: 123 menu checks, 18-check Gold driver.
 
 ### Gen 2 API Probe
 
@@ -158,8 +194,16 @@ added. The long form, with the debugging each came from, is in
 6. **Ship a pure suite, a headless gen-2 suite, and a driver.** Keep the
    simulation logic pure and the engine at the edges; that is what makes a
    thousand-tick soak possible.
-7. **Never ship ROM-derived content.** `modkit lint` and `pack` enforce it.
-8. **Update this file, SHOWA_ROADMAP.md and SHOWA_HANDOVER.md** when a
+7. **Never ship ROM-derived content.** `modkit lint` and `pack` enforce it —
+   including a *path* into the cache written in a lua or json file. Read what
+   you need out of the player's own tables at runtime instead (that is what
+   `core.trainers.setPic` does for battle portraits).
+8. **Screenshot every new menu and every new line of dialogue.** A green
+   suite proves state, never pixels: four column collisions and one
+   dialogue-prints-as-dots bug all shipped past green drivers. Put menu rows
+   in a pure module with a width test, and say everything through
+   `core.dialogue.say`.
+9. **Update this file, SHOWA_ROADMAP.md and SHOWA_HANDOVER.md** when a
    feature lands.
 
 ## Running the tests on Windows

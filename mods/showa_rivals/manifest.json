@@ -1,7 +1,7 @@
 {
   "id": "showa_rivals",
   "name": "Showa Rivals",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "api": 2,
   "entry": "main.lua",
   "profile": "content",
@@ -9,7 +9,7 @@
   "games": ["gen2"],
   "game_version": ">=0.0.0-0 <2.0.0",
   "priority": 120,
-  "dependencies": ["showa_core@^0.1.0"],
+  "dependencies": ["showa_core@^0.2.0"],
   "optional_dependencies": ["showa_arcade", "showa_contests", "showa_malls"],
   "conflicts": [],
   "permissions": [],
